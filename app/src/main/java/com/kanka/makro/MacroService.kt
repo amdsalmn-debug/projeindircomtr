@@ -1413,6 +1413,7 @@ class MacroService : AccessibilityService() {
                 "❤ HP/MP eşiği" to { hpMpEsikMenu() },
                 "📊 İstatistikler" to { statGoster() },
                 "❓ Kısa kılavuz" to { kilavuzGoster() },
+                "🩺 Sorun bildir (bilgiyi kopyala)" to { sorunBildir() },
                 "🧹 Ekran öğrenmesini sıfırla" to { profilSifirla() },
                 "⚙ Uygulamayı aç" to {
                     try {
@@ -7550,6 +7551,18 @@ class MacroService : AccessibilityService() {
         lootOlc(now)?.let { adaylar.add("kutu" to it) }
         val atakN = pick(now)
         atakN?.let { adaylar.add("atak" to Hedef(it.x.toFloat(), it.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" })) }
+        // Teşhis: atak neden basılmadı (uzun kutu-toplama boşluklarının gerçek sebebini raporda görmek için)
+        if (atakN == null) {
+            sonAtakYokNeden = when {
+                now < menzilBekleUntil -> "menzil_bekle"
+                now < kilitBekleUntil -> "kilit_bekle"
+                now < alanBekleUntil -> "alan_bekle"
+                isimBilinmiyorSince != 0L && now - isimBilinmiyorSince < 1500L -> "isim_bekle"
+                cfg.kilitler.isNotEmpty() && !oncekiCanli -> "hedef_yok_mob_kilidi_acik"
+                !oncekiCanli -> "hedef_yok"
+                else -> "bilinmiyor"
+            }
+        }
         kutuDonguIzle(now, atakN != null)
         val sira = Config.oncelikListe(cfg.oncelik)
         adaylar.sortBy { sira.indexOf(it.first) }
@@ -9129,6 +9142,9 @@ class MacroService : AccessibilityService() {
     private var tgtUyarildi = false
     private var kdBas = 0L; private var kdSon = 0L; private var kdBosluk = 0L; private var kdTarama = 0L
     private var kdAdim = 0; private var kdAtak = 0; private var kdCanli = 0; private var kdSay = 0
+    /** pick() atak dondurmediyse en son adimdaki sebep (menzil/kilit/alan/isim bekleniyor, hedef yok, ...) */
+    private var sonAtakYokNeden = ""
+    private var kdNeden = ""
 
     /** Kutu taraması + süresi (en uzun tarama: telefon yavaşlıyor mu?) */
     private fun lootOlc(now: Long): Hedef? {
@@ -9142,8 +9158,13 @@ class MacroService : AccessibilityService() {
         if (kdBas == 0L) return
         kdAdim++
         if (oncekiCanli) kdCanli++
-        if (atak) { kdAtak++; kdBosluk = maxOf(kdBosluk, now - kdSon); kdSon = now }
+        if (atak) {
+            kdAtak++; kdBosluk = maxOf(kdBosluk, now - kdSon); kdSon = now
+        } else if (now - kdSon > kdBosluk) {
+            kdNeden = sonAtakYokNeden   // bu an itibariyle boşluk büyüdü: sebebini de kaydet
+        }
         if (lootPhase == Loot.BOS) {
+            if (now - kdSon > kdBosluk) kdNeden = sonAtakYokNeden
             kdBosluk = maxOf(kdBosluk, now - kdSon)
             kdSay++
             // Her 20 kutuda bir, ya da atak 0,7 sn'den uzun durduysa raporda görünür
@@ -9155,7 +9176,8 @@ class MacroService : AccessibilityService() {
             }
             if (kdBosluk > 700 || kdSay % 20 == 1)
                 TestLog.olay("KUTU_DONGU", if (kdBosluk > 700) "kutu toplanırken atak durdu" else "kutu toplandı, atak sürdü",
-                    "sure_ms=${now - kdBas} atak=$kdAtak adim=$kdAdim hedef_canli_adim=$kdCanli en_uzun_atak_boslugu_ms=$kdBosluk en_uzun_tarama_ms=$kdTarama")
+                    "sure_ms=${now - kdBas} atak=$kdAtak adim=$kdAdim hedef_canli_adim=$kdCanli en_uzun_atak_boslugu_ms=$kdBosluk en_uzun_tarama_ms=$kdTarama neden=$kdNeden")
+            kdNeden = ""
             kdBas = 0L
         }
     }
