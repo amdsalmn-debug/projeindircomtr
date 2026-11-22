@@ -51,6 +51,7 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlin.math.roundToInt
 import org.json.JSONObject
 
 class MacroService : AccessibilityService() {
@@ -1184,6 +1185,7 @@ class MacroService : AccessibilityService() {
                     ekranTanindi = true
                     TestLog.olay("EKRAN_TANINDI", "oyun ekranı tanındı", "ekran ${screenW}x$screenH")
                     panelGuncelle()
+                    otomatikHudDene()
                     if (!sessiz) sihirbazBaslat()
                 } else if (n < 5) {
                     ui.postDelayed({ taniDene(n + 1, sessiz) }, 800)
@@ -1926,6 +1928,36 @@ class MacroService : AccessibilityService() {
             collectAnkorGY = ScreenSampler.toGrid(r[1])
         }
         TestLog.olay("CIZIM_UYGULANDI", "kullanıcının çizdiği yerler kullanılıyor", m.entries.joinToString(" ") { "${it.key}=${it.value.joinToString(",")}" })
+    }
+
+    /**
+     * Ekran tanınır tanınmaz TEK SEFERLİK otomatik deneme: kullanıcı hiçbir şey çizmeden, bu telefonda
+     * HP/MP/koordinatın GERÇEKTE nerede olduğunu (hazır ayarların varsaydığı değil) kendisi bulmaya çalışır.
+     * Mantık "✏ çiz" ile birebir aynı (hudCoz): sadece kullanıcının elle çizdiği kareyi, sabit ayarların
+     * HP/MP'yi bekledigi sol-üst köşedeki geniş bir arama alanıyla değiştiriyoruz. Farklı telefon/çözünürlükte
+     * hazır ayarın oranlı tahmini biraz kaymış olsa bile, bu arama HP/MP çubuğunu rengine bakarak gerçek
+     * yerinde bulur. Bulamazsa (ör. desteklenmeyen bir oyun arayüzü) hiçbir şeye dokunmaz: kullanıcı
+     * "✏ Ekranı çizerek işaretle" ile elle göstermeye devam edebilir, hiçbir özellik kaldırılmadı.
+     */
+    private fun otomatikHudDene() {
+        if (Config.koMu(this)) return   // KO'da barlar renkle degil doluluk yazisiyla okunur, bu yontem uygun degil
+        if (cizimOku().containsKey("hud") || cizimOku().containsKey("hp")) return   // kullanici zaten elle isaretlemis, ustune yazma
+        if (!ScreenSampler.running) return
+        updateScreenSize()
+        val kare = try { ScreenSampler.tamKare() } catch (e: Exception) { null } ?: return
+        // HP/MP her desteklenen oyunda da ekranın sol-üst köşesine yakın: genis ama sinirli bir alanda ara
+        // (tüm ekranı taramak hem yavaş olur hem oyundaki baska kirmizi/mavi ögelerle karisma ihtimalini artirir)
+        val alan = Rect(0, 0, (screenW * 0.34f).roundToInt(), (screenH * 0.20f).roundToInt())
+        hudCoz(kare, alan) { bulunan ->
+            if (bulunan["hp"] != null && bulunan["mp"] != null) {
+                val o = JSONObject()
+                for ((k, r) in bulunan) o.put(k, org.json.JSONArray().put(r.left).put(r.top).put(r.right).put(r.bottom))
+                profYaz(cizimAnahtar(), o.toString())
+                cizimUygula()
+                TestLog.olay("HUD_OTO_BULUNDU", "HP/MP bu cihazda otomatik bulundu", o.toString())
+            }
+            kare.recycle()
+        }
     }
 
     private fun cizimKapat() {
