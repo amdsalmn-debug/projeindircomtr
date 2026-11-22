@@ -1172,10 +1172,29 @@ class MacroService : AccessibilityService() {
 
     private fun taniDene(n: Int, sessiz: Boolean = false) {
         rh.post {
+            var yedekKullanildi = false
             val ok = try {
                 updateScreenSize()
-                if (Config.koMu(this) || Config.pazarMi(this) || Config.genieMi(this)) ScreenSampler.grab() != null
-                else Preset.olcekBul(this) != null
+                if (Config.koMu(this) || Config.pazarMi(this) || Config.genieMi(this)) {
+                    ScreenSampler.grab() != null
+                } else {
+                    val o = Preset.olcekBul(this)
+                    if (o != null) {
+                        olcekUygula(o)
+                        true
+                    } else if (n >= 4) {
+                        // Son denemede: simgeyle eslesme olmadi ama botun calisirken zaten kullandigi
+                        // "yedek olcek" (cihaz oranina gore duz olcekleme) burada da denensin. HP bari
+                        // o olcekte GERCEKTEN gorunuyorsa (yedekOlcekMakul) kabul edilir; yoksa reddedilir,
+                        // yanlis yerlere basmasin.
+                        val yo = Preset.varsayilanOlcek(this)
+                        if (yedekOlcekMakul(yo)) {
+                            olcekUygula(yo, yedek = true)
+                            yedekKullanildi = true
+                            true
+                        } else false
+                    } else false
+                }
             } catch (e: Exception) {
                 false
             }
@@ -1183,9 +1202,10 @@ class MacroService : AccessibilityService() {
                 if (ok) {
                     taniCalisiyor = false
                     ekranTanindi = true
-                    TestLog.olay("EKRAN_TANINDI", "oyun ekranı tanındı", "ekran ${screenW}x$screenH")
+                    TestLog.olay("EKRAN_TANINDI", "oyun ekranı tanındı", "ekran ${screenW}x$screenH" + (if (yedekKullanildi) " (yedek ölçek)" else ""))
                     panelGuncelle()
                     otomatikHudDene()
+                    if (yedekKullanildi && !sessiz) toast("✅ Ekran tanındı (basit ölçekleme ile). Sorun olursa ⋯ → 🧪 Ekran testi ile kontrol et")
                     if (!sessiz) sihirbazBaslat()
                 } else if (n < 5) {
                     ui.postDelayed({ taniDene(n + 1, sessiz) }, 800)
