@@ -1027,7 +1027,7 @@ class MainActivity : Activity() {
 
     /** "Oyun seç" listesi: seçilen oyun için yeniden "Bağlan" gerekir */
     private fun oyunListesi() {
-        val oyunlar = listOf("MykoMobile" to "myko", "RevengerOnline" to "rev", "NowaOnline" to "nowa", "KO Mobile" to "ko")
+        val oyunlar = listOf("MykoMobile" to "myko", "NowaOnline" to "nowa")
         AlertDialog.Builder(this)
             .setTitle("Oyun seç")
             .setItems(oyunlar.map { it.first }.toTypedArray()) { _, i ->

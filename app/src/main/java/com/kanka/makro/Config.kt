@@ -380,11 +380,12 @@ class Config {
             else -> "cfg"
         }
 
-        // ---------- Oyun: MykoMobile / KO Mobile ----------
-        /** "myko" ya da "ko". KO: Farm ve PK; Pazar sadece MykoMobile icin. */
+        // ---------- Oyun: MykoMobile / NowaOnline ----------
+        /** "myko" ya da "nowa". KO Mobile ve RevengerOnline destegi kaldirildi: eskiden
+         *  kaydedilmis bir profilde hala "ko"/"rev" yazsa bile artik myko'ya duser. */
         fun oyun(ctx: Context): String {
             val o = genel(ctx).getString("oyun", "myko") ?: "myko"
-            return if (o == "ko" && !botGorunur("ko")) "myko" else o
+            return if (o == "ko" || o == "rev") "myko" else o
         }
 
         fun koMu(ctx: Context): Boolean = oyun(ctx) == "ko" && !pazarMi(ctx)
