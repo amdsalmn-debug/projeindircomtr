@@ -682,14 +682,10 @@ class MacroService : AccessibilityService() {
         val yeni = (eski.split("\n").filter { it.isNotBlank() } + satir).takeLast(40).joinToString("\n")
         pr.edit().putString("log", yeni).commit()
 
-        // Koruma: sistem agir kisitlamaya girdiyse (SEVERE ve ustu) ya da pil cok sicaksa dur
-        if ((termal >= 3 || (!sicak.isNaN() && sicak >= 46f)) && (running || pazarCalisiyor)) {
-            val neden = if (termal >= 3) "Telefon aşırı ısındı (termal seviye $termal)"
-            else "Pil sıcaklığı %.1f°C".format(sicak)
-            bildirim(4200, "🌡 Bot durduruldu", "$neden. Soğuyunca tekrar başlat.")
-            if (pazarCalisiyor) pazarDurdur()
-            if (running) stopMacro("$neden. Bot durdu")
-        }
+        // Isinma/termal otomatik durdurma kapatildi (kullanici istegiyle).
+        // Not: pil/termal durumu hala yukaridaki "sistem" log satirina yaziliyor,
+        // sadece botu artik otomatik durdurmuyor. Cihazi gercekten asiri isinirsa
+        // donanimsal koruma (Android'in kendi throttling'i) yine de devreye girer.
     }
 
     private val sistemIzle: Runnable = object : Runnable {

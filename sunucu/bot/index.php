@@ -8,6 +8,7 @@ const SAAT_SINIR = 3;    // ayni IP saatte en fazla kac kez indirebilir
 const TOKEN_OMUR = 600;  // sayfa acildiktan sonra link kac saniye gecerli
 
 header('X-Robots-Tag: noindex');
+guvenlik_basliklari();
 $ip = $_SERVER['REMOTE_ADDR'] ?? '0';
 $pdo = db();
 

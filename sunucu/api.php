@@ -28,11 +28,15 @@ $simdi = time();
 
 try {
     $pdo = db();
-    // Kaba kuvvet korumasi: 10 dakikada 10 hatali deneme
+    $uyeAnahtar = 'u:' . $k;   // kullanici bazli sayac: IP degistire degistire deneme yapilmasin
+    // Kaba kuvvet korumasi: 10 dakikada 10 hatali deneme (IP) / 20 hatali deneme (bu kullanici adi, hangi IP'den olursa olsun)
     $pdo->prepare('DELETE FROM makro_denemeler WHERE zaman < ?')->execute([$simdi - 600]);
     $q = $pdo->prepare('SELECT COUNT(*) FROM makro_denemeler WHERE ip = ?');
     $q->execute([$ip]);
     if ((int)$q->fetchColumn() >= 10) hata('Çok fazla hatalı deneme. 10 dakika sonra tekrar dene.');
+    $q = $pdo->prepare('SELECT COUNT(*) FROM makro_denemeler WHERE ip = ?');
+    $q->execute([$uyeAnahtar]);
+    if ((int)$q->fetchColumn() >= 20) hata('Çok fazla hatalı deneme. 10 dakika sonra tekrar dene.');
 
     $q = $pdo->prepare('SELECT * FROM makro_uyeler WHERE kullanici = ?');
     $q->execute([$k]);
@@ -41,11 +45,13 @@ try {
         // Oturum anahtarı: aynı üye, aynı cihaz ve son verilen anahtar olmalı (şifre değişince / cihaz sıfırlanınca geçersiz)
         if (!$u || empty($u['token']) || !hash_equals((string)$u['token'], $t) || (string)$u['cihaz'] !== $c) {
             $pdo->prepare('INSERT INTO makro_denemeler (ip, zaman) VALUES (?, ?)')->execute([$ip, $simdi]);
+            $pdo->prepare('INSERT INTO makro_denemeler (ip, zaman) VALUES (?, ?)')->execute([$uyeAnahtar, $simdi]);
             echo json_encode(['ok' => 0, 'mesaj' => 'Oturum kapandı, uygulamadan tekrar giriş yap', 'yeniden_giris' => 1, 'sunucu' => 0], JSON_UNESCAPED_UNICODE);
             exit;
         }
     } elseif (!$u || !password_verify($s, $u['sifre_hash'])) {
         $pdo->prepare('INSERT INTO makro_denemeler (ip, zaman) VALUES (?, ?)')->execute([$ip, $simdi]);
+        $pdo->prepare('INSERT INTO makro_denemeler (ip, zaman) VALUES (?, ?)')->execute([$uyeAnahtar, $simdi]);
         hata('Kullanıcı adı veya şifre yanlış');
     }
     if (!(int)$u['aktif']) hata('Üyelik kapatılmış');

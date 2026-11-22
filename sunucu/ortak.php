@@ -20,8 +20,20 @@ function db(): PDO {
 
 function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+/** Her sayfada: tarayiciya tiklama-hirsizligi (clickjacking), MIME-sniffing gibi
+ *  temel korumalari bildirir. Admin.php, kontrol.php gibi HTML donen sayfalar cagirir. */
+function guvenlik_basliklari(): void {
+    header('X-Frame-Options: DENY');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    if (($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? '') !== 'off') {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
+}
+
 /** Panel oturumu: çerez JavaScript'ten okunamaz, başka siteden gönderilmez, HTTPS'te şifreli; 2 saat işlem yoksa düşer */
 function oturum_baslat(): void {
+    guvenlik_basliklari();
     session_set_cookie_params([
         'lifetime' => 0, 'path' => '/', 'httponly' => true, 'samesite' => 'Strict',
         'secure' => (($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? '') !== 'off'),
