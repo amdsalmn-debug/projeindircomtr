@@ -7551,6 +7551,14 @@ class MacroService : AccessibilityService() {
         lootOlc(now)?.let { adaylar.add("kutu" to it) }
         val atakN = pick(now)
         atakN?.let { adaylar.add("atak" to Hedef(it.x.toFloat(), it.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" })) }
+        // Kılıç (temel saldırı): hedef canlıyken skille BİRLİKTE, aynı dokunuşla basılır (otomatik saldırı
+        // olmayan sunucularda mob sadece seçilince vurulmuyor). pkAktif/koAktif burada ayrı akışta,
+        // dokunulmaz. Skillerle aynı adımda, aynı tek dokunuşa (tapMulti) eklenir.
+        if (oncekiCanli && !pkAktif && !koAktif) {
+            cfg.points.firstOrNull { it.type == "saldiri" && it.on }?.let { kilic ->
+                adaylar.add("atak" to Hedef(kilic.x.toFloat(), kilic.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" }))
+            }
+        }
         // Teşhis: atak neden basılmadı (uzun kutu-toplama boşluklarının gerçek sebebini raporda görmek için)
         if (atakN == null) {
             sonAtakYokNeden = when {
