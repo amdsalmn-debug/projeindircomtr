@@ -8984,18 +8984,31 @@ class MacroService : AccessibilityService() {
         // Tablette arayuz yukseklige gore buyur: sablonun farkli boylarini da dene (bir kez hazirlanir)
         val varyant = collectVaryant ?: collectVaryantHazirla().also { collectVaryant = it }
         val adaylar = listOfNotNull(cfg.collectT?.let { false to it }, cfg.collectT2?.let { true to it }) + varyant
-        for ((dugme, t) in adaylar) {
+        if (adaylar.isEmpty()) return null
+        // Her biri TAM EKRAN tarama (agir): hepsini tek cagride denemek yavas/eski cihazlarda
+        // botu saniyelerce durdurabiliyordu (rapor: tek bir tarama 9-11 sn surup atagi dondurdu).
+        // Bunun yerine her cagride sadece birkacini dene; kalanlari 600ms sonraki cagri devam ettirir.
+        // Boylece tum varyantlar yine denenir (2.5 sn'lik bekleme icinde birkac tur doner), ama her
+        // tek adimin suresi sinirli kalir, atak uzun sure kesintiye ugramaz.
+        val BATCH = 3
+        var i = collectVaryantIdx % adaylar.size
+        repeat(minOf(BATCH, adaylar.size)) {
+            val (dugme, t) = adaylar[i]
             findT(f, t)?.let { pos ->
                 collectOgren(pos)
                 // Tutan boyu hatirla: sonraki kutularda hizli yakin arama bununla yapilir
                 if (dugme) cfg.collectT2 = t else cfg.collectT = t
                 TestLog.olay("COLLECT_GENIS_BULDU", "Collect All geniş aramada bulundu", "grid=${pos[0]},${pos[1]} beklenen=$collectAnkorGX,$collectAnkorGY w=${t.w} ekran ${screenW}x$screenH")
+                collectVaryantIdx = (i + 1) % adaylar.size
                 return t to pos
             }
+            i = (i + 1) % adaylar.size
         }
+        collectVaryantIdx = i
         return null
     }
     private var collectGenisAt = 0L
+    private var collectVaryantIdx = 0
     private var collectKesin = false   // Collect All'in tam yeri ogrenildi mi
 
     private fun collectOgren(pos: IntArray): IntArray {
