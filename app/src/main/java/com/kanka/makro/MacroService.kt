@@ -1366,55 +1366,109 @@ class MacroService : AccessibilityService() {
             openApp()
             return
         }
-        // KURAL: Uyeler sadece Ayarlar, Tuslari duzenle, Mob kilitle/kaldir ve Uygulamayi ac'i gorur.
-        // Bar/kutu kaydi ve tum test/kayit ekranlari SADECE YONETICI. Yeni menu ogesi eklerken
-        // teknik/test olanlari yoneticiListesi'ne koy.
-        val yonetici = Lisans.yoneticiMi()
-        val testListesi: List<Pair<String, () -> Unit>> = if (Config.koMu(this)) emptyList() else
-            listOf<Pair<String, () -> Unit>>("🏙 Otomatik çanta boşaltma" to { townSihirbaz() }, "⚒ Upgrade Bot" to { upgradeMenu() })
-        // Bar/kutu kaydı ve test ekranları menüden kaldırıldı (ekran otomatik tanınıyor)
-        val yoneticiListesi: List<Pair<String, () -> Unit>> = emptyList()
+        if (Config.genieMi(this)) {
+            // Genie Hizlandir: sadece ayar, kilic tusu ve uygulama - kategorilere ayirmaya gerek yok
+            showMenu(
+                "Menü",
+                listOf<Pair<String, () -> Unit>>(
+                    "📋 Kurulum adımları" to { kurulumListesi() },
+                    "⚙ Ayarlar" to { ayarKarti() },
+                    "🛠 Tuşları düzenle" to { openEditor() },
+                    "⚙ Uygulamayı aç" to { openApp() }
+                )
+            )
+            return
+        }
+        // Eskiden tum ogeler tek (uzun) listede, 2 sutunlu karmasik bir ekran olusturuyordu.
+        // Artik kisim kisim: ana menu sadece kategori basliklarini gosterir, her biri kendi
+        // alt menusunu acar (her alt menude "Geri" ile buraya donulur).
         showMenu(
             "Menü",
-            if (Config.genieMi(this)) listOf<Pair<String, () -> Unit>>(
-                // Genie Hizlandir: sadece ayar, kilic tusu ve uygulama
-                "📋 Kurulum adımları" to { kurulumListesi() },
-                "⚙ Ayarlar" to { ayarKarti() },
-                "🛠 Tuşları düzenle" to { openEditor() },
-                "⚙ Uygulamayı aç" to { openApp() }
-            ) else listOf<Pair<String, () -> Unit>>(
-                "📋 Kurulum adımları" to { kurulumListesi() },
-                "⚙ Ayarlar" to { ayarKarti() },
-                "🛠 Tuşları düzenle" to { openEditor() }
-            ) + yoneticiListesi + testListesi + listOf<Pair<String, () -> Unit>>(
+            listOf<Pair<String, () -> Unit>>(
+                "🎯 Oyun & Hedef" to { menuHedef() },
+                "🛠 Kurulum & Ayarlar" to { menuKurulumAyarlar() },
+                "🏙 Çanta & Ekstra" to { menuCantaEkstra() },
+                "📊 Bilgi & Teşhis" to { menuBilgiTeshis() },
+                "⚙ Uygulama" to { menuUygulama() }
+            )
+        )
+    }
+
+    /** Kategori: hedef secimi, kilitler, esikler, anti-afk, respawn */
+    private fun menuHedef() {
+        showMenu(
+            "🎯 Oyun & Hedef",
+            listOf<Pair<String, () -> Unit>>(
                 "🎯 Seçili mobu kilitle" to { mobuKilitle() },
-            ) + (if (Lisans.veriHesabi()) listOf<Pair<String, () -> Unit>>(
-                (if (veriKarar() == 1) "📸 Görüntü paylaşımı: AÇIK (kapat)" else "📸 Görüntü paylaşımı: KAPALI (aç)") to {
-                    if (veriKarar() == 1) {
-                        veriKararYaz(2); ah.removeCallbacks(veriDongu); toast("📸 Görüntü paylaşımı kapatıldı")
-                    } else veriOnayKarti()
-                }
-            ) else emptyList()) + listOf<Pair<String, () -> Unit>>(
-                "✏ Ekranı çizerek işaretle" to { if (Config.koMu(this)) toast("KO'da gerekmiyor: barları bot kendisi buluyor") else cizimEditoru() },
-                "📍 Slot kilidi (alan sınırı)" to { if (Config.koMu(this)) toast("KO'da koordinat okunmuyor, slot kilidi yok") else slotKilidiMenu() },
                 "🔓 Mob kilitlerini kaldır" to {
                     val c = Config.load(this)
                     c.kilitler.clear()
                     c.save(this)
                     toast("Kilitler kaldırıldı, her moba vurulacak")
                 },
-                "👤 Profiller" to { profilMenu() },
-                "🛡 Anti-AFK" to { antiAfkMenu() },
+                "📍 Slot kilidi (alan sınırı)" to { if (Config.koMu(this)) toast("KO'da koordinat okunmuyor, slot kilidi yok") else slotKilidiMenu() },
+                "❤ HP/MP eşiği" to { hpMpEsikMenu() },
                 (if (cfg.otomatikRespawn) "💀 Ölünce respawn: AÇIK" else "💀 Ölünce respawn: KAPALI") to {
                     val c2 = Config.load(this); c2.otomatikRespawn = !c2.otomatikRespawn; c2.save(this)
                     cfg.otomatikRespawn = c2.otomatikRespawn
                     toast(if (c2.otomatikRespawn) "Ölünce respawn denenecek" else "Ölünce bot sadece durur")
                 },
-                "❤ HP/MP eşiği" to { hpMpEsikMenu() },
-                "📊 İstatistikler" to { statGoster() },
-                "❓ Kısa kılavuz" to { kilavuzGoster() },
-                "🩺 Sorun bildir (bilgiyi kopyala)" to { sorunBildir() },
+                "🛡 Anti-AFK" to { antiAfkMenu() },
+                "⬅ Menü" to { showMainMenu() }
+            )
+        )
+    }
+
+    /** Kategori: ilk kurulum ve kalici ayarlar */
+    private fun menuKurulumAyarlar() {
+        showMenu(
+            "🛠 Kurulum & Ayarlar",
+            listOf<Pair<String, () -> Unit>>(
+                "📋 Kurulum adımları" to { kurulumListesi() },
+                "⚙ Ayarlar" to { ayarKarti() },
+                "🛠 Tuşları düzenle" to { openEditor() },
+                "✏ Ekranı çizerek işaretle" to { if (Config.koMu(this)) toast("KO'da gerekmiyor: barları bot kendisi buluyor") else cizimEditoru() },
                 "🧹 Ekran öğrenmesini sıfırla" to { profilSifirla() },
+                "👤 Profiller" to { profilMenu() },
+                "⬅ Menü" to { showMainMenu() }
+            )
+        )
+    }
+
+    /** Kategori: canta/banka dongusu ve ek ozellikler */
+    private fun menuCantaEkstra() {
+        val testListesi: List<Pair<String, () -> Unit>> = if (Config.koMu(this)) emptyList() else
+            listOf<Pair<String, () -> Unit>>("🏙 Otomatik çanta boşaltma" to { townSihirbaz() }, "⚒ Upgrade Bot" to { upgradeMenu() })
+        showMenu(
+            "🏙 Çanta & Ekstra",
+            testListesi + (if (Lisans.veriHesabi()) listOf<Pair<String, () -> Unit>>(
+                (if (veriKarar() == 1) "📸 Görüntü paylaşımı: AÇIK (kapat)" else "📸 Görüntü paylaşımı: KAPALI (aç)") to {
+                    if (veriKarar() == 1) {
+                        veriKararYaz(2); ah.removeCallbacks(veriDongu); toast("📸 Görüntü paylaşımı kapatıldı")
+                    } else veriOnayKarti()
+                }
+            ) else emptyList()) + listOf<Pair<String, () -> Unit>>("⬅ Menü" to { showMainMenu() })
+        )
+    }
+
+    /** Kategori: istatistik, teshis, kilavuz */
+    private fun menuBilgiTeshis() {
+        showMenu(
+            "📊 Bilgi & Teşhis",
+            listOf<Pair<String, () -> Unit>>(
+                "📊 İstatistikler" to { statGoster() },
+                "🩺 Sorun bildir (bilgiyi kopyala)" to { sorunBildir() },
+                "❓ Kısa kılavuz" to { kilavuzGoster() },
+                "⬅ Menü" to { showMainMenu() }
+            )
+        )
+    }
+
+    /** Kategori: uygulamayi ac / botu kapat */
+    private fun menuUygulama() {
+        showMenu(
+            "⚙ Uygulama",
+            listOf<Pair<String, () -> Unit>>(
                 "⚙ Uygulamayı aç" to {
                     try {
                         startActivity(
@@ -1423,7 +1477,8 @@ class MacroService : AccessibilityService() {
                     } catch (e: Exception) {
                     }
                 },
-                "⏻ Botu tamamen kapat" to { tamKapatSor() }
+                "⏻ Botu tamamen kapat" to { tamKapatSor() },
+                "⬅ Menü" to { showMainMenu() }
             )
         )
     }
