@@ -9731,15 +9731,32 @@ class MacroService : AccessibilityService() {
 
     /**
      * Yonlu/alan skili: butona bas, kisa sure basili tut (oyun kucuk yon tusunu gostersin),
-     * sonra mobun yonune surukle ve birak. Suresi/mesafesi tahmini - ilk gercek testte ayarlanabilir.
+     * sonra mobun yonune AZAR AZAR (hareket joystick'lerindeki gibi, her ~40ms'de bir kucuk
+     * adim) surukle ve birak. Tek buyuk sicrama yerine kademeli surukleme kullanmamizin sebebi:
+     * oyunun gercek bir parmak hareketini (surekli kucuk konum degisimi) daha guvenilir
+     * algilamasi beklenir - tipki PK joystick'lerinin calisma mantigi gibi.
      */
     private fun yonluStroke(h: Hedef, start: Long): GestureDescription.StrokeDescription {
+        val TUT_SURE = 260L
+        val SEG_SURE = 40L
+        val SEG_SAY = 6
         val tut = Path().apply { moveTo(h.x, h.y); lineTo(h.x, h.y) }
-        val s1 = GestureDescription.StrokeDescription(tut, start, 260L, true)
+        var s: GestureDescription.StrokeDescription = GestureDescription.StrokeDescription(tut, start, TUT_SURE, true)
         val sx = (h.surukleX ?: h.x).coerceIn(1f, (screenW - 2).toFloat())
         val sy = (h.surukleY ?: h.y).coerceIn(1f, (screenH - 2).toFloat())
-        val surukle = Path().apply { moveTo(h.x, h.y); lineTo(sx, sy) }
-        return s1.continueStroke(surukle, start + 260L, 150L, false)
+        var zaman = start + TUT_SURE
+        for (i in 1..SEG_SAY) {
+            val t0 = (i - 1).toFloat() / SEG_SAY
+            val t1 = i.toFloat() / SEG_SAY
+            val x0 = h.x + (sx - h.x) * t0
+            val y0 = h.y + (sy - h.y) * t0
+            val x1 = h.x + (sx - h.x) * t1
+            val y1 = h.y + (sy - h.y) * t1
+            val yol = Path().apply { moveTo(x0, y0); lineTo(x1, y1) }
+            s = s.continueStroke(yol, zaman, SEG_SURE, i < SEG_SAY)
+            zaman += SEG_SURE
+        }
+        return s
     }
 
     /** Birden fazla noktaya ayni anda (farkli parmaklarla) dokun */
