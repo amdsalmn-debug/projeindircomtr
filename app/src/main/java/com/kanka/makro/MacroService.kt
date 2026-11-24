@@ -2326,9 +2326,9 @@ class MacroService : AccessibilityService() {
                             safeRemove(kok)
                             ui.postDelayed({
                                 try {
-                                    val h = Hedef(dX, dY, 0f, false, bitisX, bitisY)
-                                    val g = GestureDescription.Builder().addStroke(yonluStroke(h, 0L)).build()
-                                    dispatchGesture(g, null, null)
+                                    // Gercek-zamanli (jPompa ile ayni) yontemle test et - kalici
+                                    // olarak botun da kullanacagi AYNI mekanizma
+                                    yonluCalistir(dX, dY, bitisX, bitisY) {}
                                 } catch (e: Exception) {
                                     hataKaydet("yonluTest", e)
                                 }
@@ -6304,6 +6304,93 @@ class MacroService : AccessibilityService() {
         }
     }
 
+    // ---------------- yonlu skil durtucusu (jPompa ile AYNI mantik) ----------------
+    // Onemli bulgu: karakter yuruyusu (jPompa) dispatchGesture'i TEK BUYUK onceden-hesaplanmis
+    // jest olarak degil, GERCEK ZAMANLI kucuk adimlarla (her adim kendi dispatchGesture cagrisi,
+    // bir onceki bitince digeri) gonderiyor ve bu calisiyor (karakter duzgun yuruyor). Yonlu skil
+    // icin ONCEKI denemeler hep TEK BUYUK onceden-hazirlanan continueStroke zinciriydi - calismadi.
+    // Bu fonksiyon jPompa ile BIREBIR AYNI gercek-zamanli adim mantigini yonlu skile uygular.
+    @Volatile private var yonluMesgul = false
+    private var yonluUcusta = false
+    private var yonluStrokeAkis: GestureDescription.StrokeDescription? = null
+    private var yonluAdim = 0
+    private var yonluLx = 0f
+    private var yonluLy = 0f
+    private var yonluHedefDizi: FloatArray? = null   // skillX, skillY, surukleX, surukleY
+    private var yonluBitince: (() -> Unit)? = null
+    private val YONLU_TUT_ADIM = 6     // 6 x 60ms = 360ms sabit basili tutma
+    private val YONLU_SURUKLE_ADIM = 5 // 5 x 60ms = 300ms kademeli surukleme
+    private val YONLU_SEG = 60L
+
+    /** Yonlu skili gercek zamanli (jPompa gibi) calistirir: basili tut -> kademeli surukle -> birak */
+    private fun yonluCalistir(skillX: Float, skillY: Float, surukleX: Float, surukleY: Float, bitti: () -> Unit) {
+        yonluMesgul = true
+        yonluStrokeAkis = null
+        yonluAdim = 0
+        yonluHedefDizi = floatArrayOf(skillX, skillY, surukleX, surukleY)
+        yonluBitince = bitti
+        yonluPompa()
+    }
+
+    private fun yonluPompa() {
+        if (yonluUcusta) return
+        val hd = yonluHedefDizi
+        if (hd == null) { yonluBitirVeKapat(); return }
+        val skillX = hd[0]; val skillY = hd[1]; val surX = hd[2]; val surY = hd[3]
+        val toplam = YONLU_TUT_ADIM + YONLU_SURUKLE_ADIM
+        if (yonluAdim >= toplam) { yonluBitirVeKapat(); return }
+        val onceki = yonluStrokeAkis
+        var tx: Float
+        var ty: Float
+        if (yonluAdim < YONLU_TUT_ADIM) {
+            tx = skillX; ty = skillY
+        } else {
+            val t = (yonluAdim - YONLU_TUT_ADIM + 1).toFloat() / YONLU_SURUKLE_ADIM
+            tx = skillX + (surX - skillX) * t
+            ty = skillY + (surY - skillY) * t
+        }
+        val devamEdecek = yonluAdim < toplam - 1
+        val yol = Path()
+        val st: GestureDescription.StrokeDescription
+        try {
+            if (onceki == null) {
+                if (Math.abs(tx - skillX) < 0.6f && Math.abs(ty - skillY) < 0.6f) tx += 0.7f
+                yol.moveTo(skillX, skillY)
+                yol.lineTo(tx, ty)
+                st = GestureDescription.StrokeDescription(yol, 0, YONLU_SEG, devamEdecek)
+            } else {
+                if (Math.abs(tx - yonluLx) < 0.6f && Math.abs(ty - yonluLy) < 0.6f) tx += 0.7f
+                yol.moveTo(yonluLx, yonluLy)
+                yol.lineTo(tx, ty)
+                st = onceki.continueStroke(yol, 0, YONLU_SEG, devamEdecek)
+            }
+        } catch (e: Exception) {
+            hataKaydet("yonluPompa", e)
+            yonluBitirVeKapat()
+            return
+        }
+        yonluLx = tx; yonluLy = ty
+        yonluStrokeAkis = st
+        yonluAdim++
+        yonluUcusta = true
+        val g = try { GestureDescription.Builder().addStroke(st).build() } catch (e: Exception) { null }
+        if (g == null) { yonluUcusta = false; yonluBitirVeKapat(); return }
+        val ok = dispatchGesture(g, object : AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) { yonluUcusta = false; yonluPompa() }
+            override fun onCancelled(gestureDescription: GestureDescription?) { yonluUcusta = false; yonluBitirVeKapat() }
+        }, h)
+        if (!ok) { yonluUcusta = false; yonluBitirVeKapat() }
+    }
+
+    private fun yonluBitirVeKapat() {
+        yonluHedefDizi = null
+        yonluStrokeAkis = null
+        yonluMesgul = false
+        val cb = yonluBitince
+        yonluBitince = null
+        cb?.invoke()
+    }
+
     // ---------------- yürüme denetleyicisi (iz takibi) ----------------
     private val yuruDongusu = object : Runnable {
         override fun run() {
@@ -7902,6 +7989,9 @@ class MacroService : AccessibilityService() {
         if (kontrolde) { stepPlanla(300); return }
         // Canta rotasi calisiyor: farm adimlari dokunmaz (joystick/NPC adimlari rota motorunda)
         if (rotaMesgul) { stepPlanla(300); return }
+        // Yonlu skil gercek-zamanli basili tut+surukle dizisini gonderiyor: ayni anda baska bir
+        // dispatchGesture cagrisi bunu iptal eder (Android kurali), o yuzden bitene kadar bekle
+        if (yonluMesgul) { stepPlanla(60); return }
         // Oyun arkadaysa / ekran kapaliysa / goruntu yoksa DOKUNMA
         val engel = dokunmaEngeli(SystemClock.uptimeMillis())
         if (engel != null) {
@@ -7999,15 +8089,26 @@ class MacroService : AccessibilityService() {
             adaylar.add(kat(n) to Hedef(n.x.toFloat(), n.y.toFloat(), r))
         lootOlc(now)?.let { adaylar.add("kutu" to it) }
         val atakN = pick(now)
-        fun atakHedefi(p: Nokta): Hedef {
+        // Yonlu skiller artik tapMulti'ye (tek seferlik toplu dokunus) eklenmiyor; kendi
+        // GERCEK ZAMANLI basili-tut+surukle dizisini (yonluCalistir/yonluPompa, jPompa ile ayni
+        // mantik) ayrı calistiriyor - cunku Android'de ayni anda ikinci bir dispatchGesture
+        // cagrisi digerini iptal eder. Bu yuzden null donunce o adimda baska dokunus eklenmez,
+        // dizi bitince kendi stepPlanla'siyla devam eder.
+        fun atakHedefi(p: Nokta): Hedef? {
             val hizli = adaylar.any { a -> a.first == "kutu" }
-            if (p.type == "skill" && p.yonlu) {
+            if (p.type == "skill" && p.yonlu && !yonluMesgul) {
                 val suruklen = yonluSurukleHedefi(p)
-                if (suruklen != null) return Hedef(p.x.toFloat(), p.y.toFloat(), r, fast = hizli, surukleX = suruklen.first, surukleY = suruklen.second)
+                if (suruklen != null) {
+                    yonluCalistir(p.x.toFloat(), p.y.toFloat(), suruklen.first, suruklen.second) {
+                        if (running) stepPlanla(rand(40, 90))
+                    }
+                    return null
+                }
             }
             return Hedef(p.x.toFloat(), p.y.toFloat(), r, fast = hizli)
         }
-        atakN?.let { adaylar.add("atak" to atakHedefi(it)) }
+        atakN?.let { atakHedefi(it)?.let { h -> adaylar.add("atak" to h) } }
+        if (yonluMesgul) return   // bu adimda baska dokunus eklenmez, yonlu dizisi kendi basina gonderiliyor
         // Kılıç (temel saldırı): hedef canlıyken skille BİRLİKTE, aynı dokunuşla basılır (otomatik saldırı
         // olmayan sunucularda mob sadece seçilince vurulmuyor). pkAktif/koAktif burada ayrı akışta,
         // dokunulmaz. Skillerle aynı adımda, aynı tek dokunuşa (tapMulti) eklenir.
@@ -8030,7 +8131,12 @@ class MacroService : AccessibilityService() {
                 skillLast[i] = now
                 if ((skillGorsel[i] ?: 0) == 0 && skillRef[i] != null) { skillOlc[i] = now; skillOlcCanli[i] = oncekiCanli }
                 skillReady[i] = now + if (p.cd > 0f) (p.cd * 1000).toLong() + rand(cfg.skMin, cfg.skMax) else 0L
-                adaylar.add("atak" to atakHedefi(p))
+                val h = atakHedefi(p)
+                if (h == null) {
+                    if (yonluMesgul) return
+                    continue
+                }
+                adaylar.add("atak" to h)
             }
         }
         // Teşhis: atak neden basılmadı (uzun kutu-toplama boşluklarının gerçek sebebini raporda görmek için)
