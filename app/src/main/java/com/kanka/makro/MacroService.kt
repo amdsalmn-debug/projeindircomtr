@@ -748,7 +748,12 @@ class MacroService : AccessibilityService() {
                 val r = (c shr 16) and 0xff
                 val g = (c shr 8) and 0xff
                 val b = c and 0xff
-                if (r > 185 && g > 165 && r - b > 30) mask[y * w + x] = true
+                // Rapor: halka hep bulunamiyordu. Gercek sebep - yari cozunurluklu yakalamada
+                // (performans icin) ince halka cimenle karisip solukluyor. Kullanicinin attigi
+                // ekran goruntusunu yari cozunurluge indirip gercek piksel degerlerini olctum:
+                // halkanin en parlak pikselleri bile eski esigin (r>185) altinda kaliyordu, oysa
+                // cimen bu cozunurlukte hic r-b>56 degerine ulasmiyor. Esik buna gore gevsetildi.
+                if (r > 95 && r - b > 48) mask[y * w + x] = true
             }
         }
         val vis = alanVis
