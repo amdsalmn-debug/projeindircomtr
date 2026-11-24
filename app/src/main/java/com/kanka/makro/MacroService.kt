@@ -2101,6 +2101,123 @@ class MacroService : AccessibilityService() {
         }
     }
 
+    /** Bir daha sorulmasın diye (ekran/çözünürlük bazlı) kaydedilen onay bayrakları */
+    private fun onayliMi(anahtar: String): Boolean = getSharedPreferences("yerlesim", MODE_PRIVATE).getBoolean(anahtar, false)
+    private fun onayYaz(anahtar: String) { getSharedPreferences("yerlesim", MODE_PRIVATE).edit().putBoolean(anahtar, true).apply() }
+
+    /**
+     * Ortak "bulduğumuz yer doğru mu?" kartı: ekran görüntüsü üstüne renkli kutular çizip gösterir.
+     * Sabit yerlerde olan her şey (HP/MP/koordinat, mob can çubuğu+isim, Collect All, banka penceresi)
+     * bu aynı kalıbı kullanır: bir kere bulunur, kullanıcıya gösterilir, onaylanır ya da elle düzeltilir.
+     * kutular: (etiket, renk, Rect) - Rect EKRAN pikseli cinsinden. onayAnahtari: bu ekranda bir daha
+     * sorulmasın diye (ekran çözünürlüğüne göre) kaydedilir - kullanıcı ❌ dese de ✅ dese de bir daha sorulmaz.
+     */
+    private fun otomatikOnayKarti(
+        baslik: String, aciklama: String, kare: Bitmap, kutular: List<Triple<String, Int, Rect>>,
+        onayAnahtari: String, onOnay: () -> Unit, onRed: (() -> Unit)? = null
+    ) {
+        try {
+            onayYaz(onayAnahtari)
+            val sx = kare.width.toFloat() / maxOf(1, screenW)
+            val sy = kare.height.toFloat() / maxOf(1, screenH)
+            val bm = kare.copy(Bitmap.Config.ARGB_8888, true)
+            kare.recycle()
+            val cv = Canvas(bm)
+            val kalem = Paint().apply { style = Paint.Style.STROKE; strokeWidth = maxOf(3f, bm.width * 0.004f) }
+            val yazi = Paint().apply { textSize = bm.width * 0.018f; isFakeBoldText = true; setShadowLayer(4f, 0f, 0f, Color.BLACK) }
+            for ((ad, renk, r) in kutular) {
+                kalem.color = renk; yazi.color = renk
+                val l = r.left * sx; val t = r.top * sy; val rr = r.right * sx; val b = r.bottom * sy
+                cv.drawRect(l, t, rr, b, kalem)
+                cv.drawText(ad, l, (t - dp(4)).coerceAtLeast(yazi.textSize), yazi)
+            }
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(0xF20E0E0E.toInt())
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+            }
+            box.addView(TextView(this).apply { text = baslik; setTextColor(0xFFE0B04A.toInt()); textSize = 15f })
+            box.addView(TextView(this).apply { text = aciklama; setTextColor(Color.WHITE); textSize = 13f; setPadding(0, dp(4), 0, dp(8)) })
+            box.addView(ImageView(this).apply {
+                setImageBitmap(bm); adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER
+            }, LinearLayout.LayoutParams(dp(340), LinearLayout.LayoutParams.WRAP_CONTENT))
+            val satir = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(10), 0, 0) }
+            satir.addView(btn("❌ Yanlış") { removeOverlay(); onRed?.invoke() }.apply { background = rounded(0xFF8B3A3A.toInt()) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) })
+            satir.addView(btn("✅ Doğru") { removeOverlay(); onOnay() }.apply { background = rounded(0xFF2E9E5B.toInt()) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            box.addView(satir)
+            ortadaGoster(box, dp(340) + dp(28))
+        } catch (e: Exception) {
+            hataKaydet("otomatikOnay", e)
+            try { kare.recycle() } catch (ignored: Exception) {}
+        }
+    }
+
+    /** Mob ilk kez seçilince: can çubuğu + isim yerini bir kere gösterip onaylatır */
+    private fun hedefOnayDene() {
+        if (koAktif || Config.koMu(this) || pkAktif) return
+        val anahtar = "onay_hedef_${ekranAnahtar()}"
+        if (onayliMi(anahtar)) return
+        val o = olcek ?: return
+        if (!ScreenSampler.running) return
+        val kare = try { ScreenSampler.tamKare() } catch (e: Exception) { null } ?: return
+        val isim = try { isimAlani(o) } catch (e: Exception) { null }
+        val ts = tgtStrip
+        val kutular = ArrayList<Triple<String, Int, Rect>>()
+        if (isim != null) kutular.add(Triple("Mob ismi", 0xFFFF9F1A.toInt(), Rect(isim[0], isim[1], isim[2], isim[3])))
+        if (ts.size >= 3 && ts[1] > ts[0]) kutular.add(Triple("Mob can çubuğu", 0xFFFF4D4D.toInt(), Rect(ts[0], ts[2] - 6, ts[1], ts[2] + 8)))
+        if (kutular.isEmpty()) { kare.recycle(); return }
+        ui.post {
+            otomatikOnayKarti(
+                "🎯 Burası mob ismi ve can çubuğu mu?",
+                "Kırmızı = can çubuğu, Turuncu = isim yazısı. Yanlışsa elle göster.",
+                kare, kutular, anahtar,
+                onOnay = { toast("✅ Kaydedildi") },
+                onRed = { cizimEditoru() }
+            )
+        }
+    }
+
+    /** Collect All penceresi ilk kez (kesin olarak) öğrenilince bir kere gösterip onaylatır */
+    private fun collectOnayDene(pos: IntArray) {
+        val anahtar = "onay_collect_${ekranAnahtar()}"
+        if (onayliMi(anahtar)) return
+        if (!ScreenSampler.running) return
+        val kare = try { ScreenSampler.tamKare() } catch (e: Exception) { null } ?: return
+        val cx = ScreenSampler.toScreen(pos[0].toFloat()).toInt()
+        val cy = ScreenSampler.toScreen(pos[1].toFloat()).toInt()
+        val yw = (screenW * 0.09f).toInt().coerceAtLeast(70)
+        val yh = (screenH * 0.07f).toInt().coerceAtLeast(50)
+        val r = Rect((cx - yw).coerceAtLeast(0), (cy - yh).coerceAtLeast(0), (cx + yw).coerceAtMost(screenW - 1), (cy + yh).coerceAtMost(screenH - 1))
+        ui.post {
+            otomatikOnayKarti(
+                "📦 Burası \"Collect All\" penceresi mi?",
+                "Kutu açılınca çıkan toplama penceresinin yeri burası olarak öğrenildi.",
+                kare, listOf(Triple("Collect All", 0xFF39D98A.toInt(), r)), anahtar,
+                onOnay = { toast("✅ Kaydedildi") },
+                onRed = { collectKesin = false; cizimEditoru() }
+            )
+        }
+    }
+
+    /** Banka penceresi ilk kez açılınca bir kere gösterip onaylatır */
+    private fun bankaOnayDene(kutu: Rect?) {
+        val anahtar = "onay_banka_${ekranAnahtar()}"
+        if (onayliMi(anahtar)) return
+        if (!ScreenSampler.running || kutu == null) return
+        val kare = try { ScreenSampler.tamKare() } catch (e: Exception) { null } ?: return
+        ui.post {
+            otomatikOnayKarti(
+                "🏦 Burası banka/Inn penceresi mi?",
+                "Pencere açılmadan önceki ve sonraki görüntü karşılaştırılarak bulundu. Yanlışsa elle göster.",
+                kare, listOf(Triple("Banka penceresi", 0xFF4DA3FF.toInt(), kutu)), anahtar,
+                onOnay = { toast("✅ Kaydedildi") },
+                onRed = { }
+            )
+        }
+    }
+
     private fun cizimKapat() {
         cizimKok?.let { safeRemove(it) }
         cizimKok = null
@@ -6460,7 +6577,8 @@ class MacroService : AccessibilityService() {
             val stdler = StringBuilder()
             for (rr in 0 until cfg.rotaSatir.coerceIn(1, 4)) for (cc in 0 until 7) stdler.append(hucreStd(1605f, rr, cc).toInt()).append(' ')
             TestLog.olay("ROTA_BANKA_ACIK", "banka penceresi açıldı", "hucre_std=$stdler esik=8 satir=${cfg.rotaSatir} u=%.3f".format(uiS()))
-            panelKutuLogla("BANKA", bankaOncekiTam, tamSnap())
+            val bankaKutu = panelKutuLogla("BANKA", bankaOncekiTam, tamSnap())
+            bankaOnayDene(bankaKutu)
             rh.postDelayed({ bankaBosaltAdim() }, 400)
             return
         }
@@ -7086,9 +7204,9 @@ class MacroService : AccessibilityService() {
 
     private fun tamSnap(): Triple<Int, Int, IntArray>? = try { ScreenSampler.bolge(0, 0, screenW, screenH) } catch (e: Exception) { null }
 
-    private fun panelKutuLogla(ad: String, once: Triple<Int, Int, IntArray>?, sonra: Triple<Int, Int, IntArray>?) {
+    private fun panelKutuLogla(ad: String, once: Triple<Int, Int, IntArray>?, sonra: Triple<Int, Int, IntArray>?): Rect? {
         try {
-            if (once == null || sonra == null || once.first != sonra.first || once.second != sonra.second) return
+            if (once == null || sonra == null || once.first != sonra.first || once.second != sonra.second) return null
             val w = sonra.first
             val h = sonra.second
             val a = once.third
@@ -7123,12 +7241,14 @@ class MacroService : AccessibilityService() {
             val y2 = son(sat, (xSay * 0.12f).toInt().coerceAtLeast(3))
             if (x1 < 0 || y1 < 0) {
                 TestLog.olay("PANEL_KUTU", "$ad: kutu bulunamadı", "ekran ${screenW}x$screenH")
-                return
+                return null
             }
             fun f(v: Int, t: Int) = "%.4f".format(v.toFloat() / t)
             TestLog.olay("PANEL_KUTU", "$ad: sol=${f(x1, w)} ust=${f(y1, h)} sag=${f(x2, w)} alt=${f(y2, h)} (ekran orani)", "ekran ${screenW}x$screenH")
+            return Rect(x1, y1, x2, y2)
         } catch (e: Exception) {
             hataKaydet("panelKutu", e)
+            return null
         }
     }
 
@@ -8823,6 +8943,7 @@ class MacroService : AccessibilityService() {
             }
             if (alive && !oncekiCanli) {
                 TestLog.olay("HEDEF_ALINDI", "yeni hedef", "")
+                hedefOnayDene()
                 // Yeni hedef: ilerleme sayacini ve mesafe sayacini baslat
                 sonYuzde = hedefYuzde()
                 ilerlemeAt = now
@@ -9220,7 +9341,9 @@ class MacroService : AccessibilityService() {
 
     private fun collectOgren(pos: IntArray): IntArray {
         collectAnkorGX = pos[0]; collectAnkorGY = pos[1]
+        val ilkKez = !collectKesin
         collectKesin = true
+        if (ilkKez) collectOnayDene(pos)
         return pos
     }
     private var collectVaryant: List<Pair<Boolean, Sablon>>? = null
