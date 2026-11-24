@@ -2027,11 +2027,77 @@ class MacroService : AccessibilityService() {
             if (bulunan["hp"] != null && bulunan["mp"] != null) {
                 val o = JSONObject()
                 for ((k, r) in bulunan) o.put(k, org.json.JSONArray().put(r.left).put(r.top).put(r.right).put(r.bottom))
-                profYaz(cizimAnahtar(), o.toString())
-                cizimUygula()
-                TestLog.olay("HUD_OTO_BULUNDU", "HP/MP bu cihazda otomatik bulundu", o.toString())
+                TestLog.olay("HUD_OTO_BULUNDU", "HP/MP bu cihazda otomatik bulundu, onay bekleniyor", o.toString())
+                ui.post { hudOnayGoster(kare, bulunan, o) }
+            } else {
+                kare.recycle()
             }
+        }
+    }
+
+    /**
+     * otomatikHudDene()'in bulduğu HP/MP/koordinat yerlerini kullanıcıya gösterip onaylatır:
+     * ekran görüntüsü üstüne renkli çerçeveler çizilir ("burası HP barı, doğru mu?" mantığı).
+     * Doğruysa kaydedilir; yanlışsa kullanıcı elle işaretleme ekranına yönlendirilir.
+     */
+    private fun hudOnayGoster(kare: Bitmap, bulunan: Map<String, Rect>, onJson: JSONObject) {
+        try {
+            val renkler = mapOf("hp" to 0xFFFF4D4D.toInt(), "mp" to 0xFF4DA3FF.toInt(), "koord" to 0xFFFFE14D.toInt())
+            val adlar = mapOf("hp" to "HP çubuğu", "mp" to "MP çubuğu", "koord" to "Koordinat")
+            val sx = kare.width.toFloat() / maxOf(1, screenW)
+            val sy = kare.height.toFloat() / maxOf(1, screenH)
+            val bm = kare.copy(Bitmap.Config.ARGB_8888, true)
             kare.recycle()
+            val cv = Canvas(bm)
+            val kalem = Paint().apply { style = Paint.Style.STROKE; strokeWidth = maxOf(3f, bm.width * 0.004f) }
+            val yazi = Paint().apply { textSize = bm.width * 0.018f; isFakeBoldText = true; setShadowLayer(4f, 0f, 0f, Color.BLACK) }
+            for ((k, r) in bulunan) {
+                val renk = renkler[k] ?: continue
+                kalem.color = renk
+                yazi.color = renk
+                val l = r.left * sx; val t = r.top * sy; val rr = r.right * sx; val b = r.bottom * sy
+                cv.drawRect(l, t, rr, b, kalem)
+                cv.drawText(adlar[k] ?: k, l, (t - dp(4)).coerceAtLeast(yazi.textSize), yazi)
+            }
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(0xF20E0E0E.toInt())
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+            }
+            box.addView(TextView(this).apply {
+                text = "🔍 Bulduğumuz yerler doğru mu?"
+                setTextColor(0xFFE0B04A.toInt()); textSize = 15f
+            })
+            box.addView(TextView(this).apply {
+                text = "Kırmızı = HP, Mavi = MP" + (if (bulunan.containsKey("koord")) ", Sarı = Koordinat" else "") +
+                    ". Yanlışsa elle göster."
+                setTextColor(Color.WHITE); textSize = 13f
+                setPadding(0, dp(4), 0, dp(8))
+            })
+            box.addView(ImageView(this).apply {
+                setImageBitmap(bm)
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }, LinearLayout.LayoutParams(dp(340), LinearLayout.LayoutParams.WRAP_CONTENT))
+            val satir = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(10), 0, 0)
+            }
+            satir.addView(btn("❌ Yanlış, elle göster") { removeOverlay(); cizimEditoru() }.apply {
+                background = rounded(0xFF8B3A3A.toInt())
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) })
+            satir.addView(btn("✅ Doğru, kaydet") {
+                removeOverlay()
+                profYaz(cizimAnahtar(), onJson.toString())
+                cizimUygula()
+                TestLog.olay("HUD_OTO_ONAYLANDI", "kullanıcı otomatik bulunan yerleri onayladı", onJson.toString())
+                toast("✅ Kaydedildi")
+            }.apply { background = rounded(0xFF2E9E5B.toInt()) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            box.addView(satir)
+            ortadaGoster(box, dp(340) + dp(28))
+        } catch (e: Exception) {
+            hataKaydet("hudOnay", e)
+            try { kare.recycle() } catch (ignored: Exception) {}
         }
     }
 
