@@ -2306,15 +2306,34 @@ class MacroService : AccessibilityService() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (basX >= 0) {
-                        val mesafe = Math.hypot((ev.rawX - basX).toDouble(), (ev.rawY - basY).toDouble()).toFloat()
+                    val bitisX = ev.rawX
+                    val bitisY = ev.rawY
+                    val dX = basX
+                    val dY = basY
+                    if (dX >= 0) {
+                        val mesafe = Math.hypot((bitisX - dX).toDouble(), (bitisY - dY).toDouble()).toFloat()
                         if (mesafe > dp(8)) {
                             val c = Config.load(this)
                             if (i < c.points.size) {
                                 c.points[i].yonluMesafe = mesafe
                                 c.save(this)
                             }
-                            toast("✅ Kaydedildi: %.0f dp sürükleme mesafesi".format(mesafe / resources.displayMetrics.density))
+                            toast("✅ Ölçüldü: %.0f dp. Şimdi bot aynı hareketi deniyor, izle (oyunda beyaz alan çıkıyor mu?)".format(mesafe / resources.displayMetrics.density))
+                            // Kullanicinin "ben yaparken goruyorum ama botun yaptigini/neyi
+                            // kaydettigini gormuyorum" sikayeti icin: olculen AYNI iki nokta
+                            // arasinda bot da kendi (simule) dokunusunu hemen burada dener,
+                            // boylece kullanici gercek goz onunde kiyaslayabilir.
+                            safeRemove(kok)
+                            ui.postDelayed({
+                                try {
+                                    val h = Hedef(dX, dY, 0f, false, bitisX, bitisY)
+                                    val g = GestureDescription.Builder().addStroke(yonluStroke(h, 0L)).build()
+                                    dispatchGesture(g, null, null)
+                                } catch (e: Exception) {
+                                    hataKaydet("yonluTest", e)
+                                }
+                            }, 900)
+                            return@setOnTouchListener true
                         } else {
                             toast("Çok kısa sürükleme, kaydedilmedi. Tekrar dene.")
                         }
