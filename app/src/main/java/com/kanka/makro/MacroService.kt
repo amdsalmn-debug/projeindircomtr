@@ -6918,13 +6918,22 @@ class MacroService : AccessibilityService() {
             val y0 = (h * 0.08f).toInt()
             val y1 = (h * 0.92f).toInt()
             val sut = IntArray(w)
-            for (y in y0 until y1) for (x in 0 until w) {
-                val p = a[y * w + x]
-                val q = b[y * w + x]
-                val d = Math.abs(((p shr 16) and 0xff) - ((q shr 16) and 0xff)) + Math.abs(((p shr 8) and 0xff) - ((q shr 8) and 0xff)) + Math.abs((p and 0xff) - (q and 0xff))
-                if (d > 45) sut[x]++
+            // Agir: tam cozunurlukte her satiri taramak saniyelerce surebiliyor (rapor: botu kasiyordu).
+            // Sutun (x) cozunurlugu kenar hassasiyeti icin tam kalmali, ama satirlari (y) 2'de 1 orneklemek
+            // yeterli: sut[x] zaten "kac satirda fark var" histogrami, yari orneklemeyle de guvenilir kalir.
+            var ySay = 0
+            var y = y0
+            while (y < y1) {
+                ySay++
+                for (x in 0 until w) {
+                    val p = a[y * w + x]
+                    val q = b[y * w + x]
+                    val d = Math.abs(((p shr 16) and 0xff) - ((q shr 16) and 0xff)) + Math.abs(((p shr 8) and 0xff) - ((q shr 8) and 0xff)) + Math.abs((p and 0xff) - (q and 0xff))
+                    if (d > 45) sut[x]++
+                }
+                y += 2
             }
-            val esik = ((y1 - y0) * 0.5f).toInt()
+            val esik = (ySay * 0.5f).toInt()
             val bosluk = maxOf(2, (w * 0.02f).toInt())
             var enS = -1; var enE = -1
             var s0 = -1; var son = -1
@@ -6982,18 +6991,32 @@ class MacroService : AccessibilityService() {
             val b = sonra.third
             val sut = IntArray(w)
             val sat = IntArray(h)
-            for (y in 0 until h) for (x in 0 until w) {
-                val p = a[y * w + x]
-                val q = b[y * w + x]
-                val d = Math.abs(((p shr 16) and 0xff) - ((q shr 16) and 0xff)) + Math.abs(((p shr 8) and 0xff) - ((q shr 8) and 0xff)) + Math.abs((p and 0xff) - (q and 0xff))
-                if (d > 60) { sut[x]++; sat[y]++ }
+            // Agir: tam cozunurlukte (ornegin 2712x1220) her piksel karsilastirmasi saniyelerce
+            // surebiliyor (rapor: botu kasiyordu). Bu sadece teshis/log icin kullanildigindan
+            // (sonuc targetlamada kullanilmiyor), 2 piksel adimla ornekleme yeterli: ~4x daha hizli,
+            // sinir tespiti hala guvenilir kalir.
+            val ADIM = 2
+            var ySay = 0
+            var y = 0
+            while (y < h) {
+                ySay++
+                var x = 0
+                while (x < w) {
+                    val p = a[y * w + x]
+                    val q = b[y * w + x]
+                    val d = Math.abs(((p shr 16) and 0xff) - ((q shr 16) and 0xff)) + Math.abs(((p shr 8) and 0xff) - ((q shr 8) and 0xff)) + Math.abs((p and 0xff) - (q and 0xff))
+                    if (d > 60) { sut[x]++; sat[y]++ }
+                    x += ADIM
+                }
+                y += ADIM
             }
+            val xSay = maxOf(1, (w + ADIM - 1) / ADIM)
             fun ilk(d: IntArray, esik: Int): Int { for (i in d.indices) if (d[i] >= esik) return i; return -1 }
             fun son(d: IntArray, esik: Int): Int { for (i in d.indices.reversed()) if (d[i] >= esik) return i; return -1 }
-            val x1 = ilk(sut, (h * 0.12f).toInt().coerceAtLeast(3))
-            val x2 = son(sut, (h * 0.12f).toInt().coerceAtLeast(3))
-            val y1 = ilk(sat, (w * 0.12f).toInt().coerceAtLeast(3))
-            val y2 = son(sat, (w * 0.12f).toInt().coerceAtLeast(3))
+            val x1 = ilk(sut, (ySay * 0.12f).toInt().coerceAtLeast(3))
+            val x2 = son(sut, (ySay * 0.12f).toInt().coerceAtLeast(3))
+            val y1 = ilk(sat, (xSay * 0.12f).toInt().coerceAtLeast(3))
+            val y2 = son(sat, (xSay * 0.12f).toInt().coerceAtLeast(3))
             if (x1 < 0 || y1 < 0) {
                 TestLog.olay("PANEL_KUTU", "$ad: kutu bulunamadı", "ekran ${screenW}x$screenH")
                 return
@@ -7609,7 +7632,10 @@ class MacroService : AccessibilityService() {
         // Kılıç (temel saldırı): hedef canlıyken skille BİRLİKTE, aynı dokunuşla basılır (otomatik saldırı
         // olmayan sunucularda mob sadece seçilince vurulmuyor). pkAktif/koAktif burada ayrı akışta,
         // dokunulmaz. Skillerle aynı adımda, aynı tek dokunuşa (tapMulti) eklenir.
-        if (oncekiCanli && !pkAktif && !koAktif) {
+        // ÖNEMLİ: Mob kilidi açıksa (cfg.kilitler doluysa), kılıç da skiller gibi SADECE kilitli isimdeki
+        // mob onaylanmışken (kilitOnayli) basılır; yanlış/kilitsiz moba kılıç da vurmaz (önceki sürümde
+        // bu kontrol eksikti: skiller duruyordu ama kılıç her moba basmaya devam ediyordu).
+        if (oncekiCanli && !pkAktif && !koAktif && (cfg.kilitler.isEmpty() || kilitOnayli)) {
             cfg.points.firstOrNull { it.type == "saldiri" && it.on }?.let { kilic ->
                 adaylar.add("atak" to Hedef(kilic.x.toFloat(), kilic.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" }))
             }
