@@ -13,7 +13,8 @@ data class Nokta(
     var cd: Float = 0f,
     var on: Boolean = true,
     var yuzde: Int = 0,     // Heal: can bu yuzdenin altina inince bas
-    var yonlu: Boolean = false   // Yonlu/alan skill: basinca kucuk yon tusuna donusur, mobun yonune surukleyip birakmak gerekir
+    var yonlu: Boolean = false,  // Yonlu/alan skill: basinca kucuk yon tusuna donusur, mobun yonune surukleyip birakmak gerekir
+    var yonluMesafe: Float = 0f  // Kullanicinin elle olcup kaydettigi gercek surukleme mesafesi (ekran pikseli, 0 = henuz olculmedi)
 )
 
 data class RenkNokta(val x: Int, val y: Int, val color: Int) {
@@ -197,7 +198,7 @@ class Config {
             arr.put(
                 JSONObject().put("name", p.name).put("type", p.type)
                     .put("x", p.x).put("y", p.y).put("cd", p.cd.toDouble()).put("on", p.on).put("yuzde", p.yuzde)
-                    .put("yonlu", p.yonlu)
+                    .put("yonlu", p.yonlu).put("yonluMesafe", p.yonluMesafe.toDouble())
             )
         }
         o.put("points", arr)
@@ -472,7 +473,7 @@ class Config {
                             p.getString("name"), p.getString("type"),
                             p.getInt("x"), p.getInt("y"),
                             p.optDouble("cd", 0.0).toFloat(), p.optBoolean("on", true),
-                            p.optInt("yuzde", 0), p.optBoolean("yonlu", false)
+                            p.optInt("yuzde", 0), p.optBoolean("yonlu", false), p.optDouble("yonluMesafe", 0.0).toFloat()
                         )
                     )
                 }

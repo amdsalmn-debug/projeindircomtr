@@ -845,11 +845,11 @@ class MacroService : AccessibilityService() {
             val n = SystemClock.uptimeMillis()
             if (n - yonluToastSon > 5000) { yonluToastSon = n; ui.post { toast("🧭 ${p.name}: mob yönüne sürükleniyor") } }
         }
-        val MIN_DP = dp(18).toFloat()
-        val MAX_DP = dp(55).toFloat()
-        // Mob, ekranin yaklasik yarisi kadar uzaga kadar gorunur varsayimiyla orantila (0..1), sinirlara kirp
-        val oran = (ekranMesafe / (minOf(screenW, screenH) * 0.45f)).coerceIn(0f, 1f)
-        val mesafe = MIN_DP + (MAX_DP - MIN_DP) * oran
+        // Mesafeyi tahmin etmek yerine (bu hep yanlis cikti), kullanicinin ELLE OLCTUGU gercek
+        // surukleme mesafesini (yonluMesafe, bkz. yonluMesafeOgren) kullaniyoruz. Henuz olculmediyse
+        // (0), kaba bir varsayilanla devam ederiz ama kullanici "Sürükleme mesafesini öğren" ile
+        // olcmedikce hep ayni belirsizlik surer.
+        val mesafe = if (p.yonluMesafe > 0f) p.yonluMesafe else dp(70).toFloat()
         return (p.x + Math.cos(aci) * mesafe).toFloat() to (p.y + Math.sin(aci) * mesafe).toFloat()
     }
 
@@ -2262,6 +2262,67 @@ class MacroService : AccessibilityService() {
                 onOnay = { toast("✅ Kaydedildi") },
                 onRed = { }
             )
+        }
+    }
+
+    /**
+     * Yonlu skil icin: tahmine dayali surukleme mesafesi hep yanlis cikti. Bunun yerine kullanici
+     * ELLE gostersin: skile dokunup oyunda beyaz alan (AOE onizleme) mobun ustune gelene kadar
+     * suruklesin, parmagini kaldirsin. Bot bu iki nokta arasindaki GERCEK mesafeyi olcup kaydeder;
+     * sonraki otomatik kullanimlarda (yonluSurukleHedefi) mobun yonune bu mesafe kadar surukler.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun yonluMesafeOgren(i: Int) {
+        if (running) { toast("Önce botu durdur"); return }
+        val cf = Config.load(this)
+        if (i >= cf.points.size) return
+        removeOverlay(); closeEditor(); cizimKapat()
+        updateScreenSize()
+        var basX = -1f
+        var basY = -1f
+        val kok = FrameLayout(this)
+        val bilgi = TextView(this).apply {
+            text = "📏 Skile dokun, oyunda beyaz alan (AOE önizleme) mobun ÜSTÜNE gelene kadar sürükle, sonra parmağını kaldır."
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            background = rounded(0xE6101318.toInt())
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        kok.addView(
+            bilgi,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+                .apply { topMargin = dp(28) }
+        )
+        kok.setOnTouchListener { _, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    basX = ev.rawX; basY = ev.rawY
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (basX >= 0) {
+                        val mesafe = Math.hypot((ev.rawX - basX).toDouble(), (ev.rawY - basY).toDouble()).toFloat()
+                        if (mesafe > dp(8)) {
+                            val c = Config.load(this)
+                            if (i < c.points.size) {
+                                c.points[i].yonluMesafe = mesafe
+                                c.save(this)
+                            }
+                            toast("✅ Kaydedildi: %.0f dp sürükleme mesafesi".format(mesafe / resources.displayMetrics.density))
+                        } else {
+                            toast("Çok kısa sürükleme, kaydedilmedi. Tekrar dene.")
+                        }
+                    }
+                    safeRemove(kok)
+                    true
+                }
+                else -> true
+            }
+        }
+        try {
+            wm.addView(kok, lp(screenW, screenH).apply { x = 0; y = 0 })
+        } catch (e: Exception) {
+            toast("Ölçüm ekranı açılamadı")
         }
     }
 
@@ -3697,6 +3758,10 @@ class MacroService : AccessibilityService() {
                 }
                 editorRefresh()
             })
+            if (p.yonlu) items.add(
+                (if (p.yonluMesafe > 0f) "📏 Sürükleme mesafesi: %.0fdp (yeniden ölç)".format(p.yonluMesafe / resources.displayMetrics.density)
+                else "📏 Sürükleme mesafesini öğren (dokun, sürükle, bırak)") to { yonluMesafeOgren(i) }
+            )
         }
         items.add("🔁 Türünü değiştir" to {
             showMenu("Yeni tür", turListesi { type ->
@@ -9743,9 +9808,9 @@ class MacroService : AccessibilityService() {
      * algilamasi beklenir - tipki PK joystick'lerinin calisma mantigi gibi.
      */
     private fun yonluStroke(h: Hedef, start: Long): GestureDescription.StrokeDescription {
-        val TUT_SURE = 260L
-        val SEG_SURE = 40L
-        val SEG_SAY = 6
+        val TUT_SURE = 380L
+        val SEG_SURE = 50L
+        val SEG_SAY = 7
         val tut = Path().apply { moveTo(h.x, h.y); lineTo(h.x, h.y) }
         var s: GestureDescription.StrokeDescription = GestureDescription.StrokeDescription(tut, start, TUT_SURE, true)
         val sx = (h.surukleX ?: h.x).coerceIn(1f, (screenW - 2).toFloat())
