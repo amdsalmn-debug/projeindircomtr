@@ -845,11 +845,17 @@ class MacroService : AccessibilityService() {
             val n = SystemClock.uptimeMillis()
             if (n - yonluToastSon > 5000) { yonluToastSon = n; ui.post { toast("🧭 ${p.name}: mob yönüne sürükleniyor") } }
         }
-        // Mesafeyi tahmin etmek yerine (bu hep yanlis cikti), kullanicinin ELLE OLCTUGU gercek
-        // surukleme mesafesini (yonluMesafe, bkz. yonluMesafeOgren) kullaniyoruz. Henuz olculmediyse
-        // (0), kaba bir varsayilanla devam ederiz ama kullanici "Sürükleme mesafesini öğren" ile
-        // olcmedikce hep ayni belirsizlik surer.
-        val mesafe = if (p.yonluMesafe > 0f) p.yonluMesafe else dp(70).toFloat()
+        // ONEMLI DUZELTME: yakinlastirilmis videodan goruldu ki bu, DUGMENIN KENDI UZERINDE
+        // kalan KUCUK/YEREL bir joystick - parmak mobun ekrandaki yerine kadar degil, dugmenin
+        // hemen disina kadar kisa bir mesafe kayiyor (sadece YON onemli, uzaklik degil). Onceki
+        // denemeler (70dp, mob mesafesine oranli vs.) hep COK FAZLA suruklüyordu; muhtemelen
+        // dugmenin gecerli joystick alaninin disina cikip oyun tarafindan yok sayiliyordu. Bu
+        // yuzden mesafe artik KUCUK bir tavana (35dp) sabitlendi - kullanicinin elle olctugu
+        // deger de (yonluMesafeOgren ile, yeniden olculmeli: KISA bir surukleme ile) varsa o
+        // kullanilir ama yine bu tavana kirpilir.
+        val TAVAN_DP = dp(35).toFloat()
+        val varsayilan = dp(24).toFloat()
+        val mesafe = (if (p.yonluMesafe > 0f) p.yonluMesafe else varsayilan).coerceAtMost(TAVAN_DP)
         return (p.x + Math.cos(aci) * mesafe).toFloat() to (p.y + Math.sin(aci) * mesafe).toFloat()
     }
 
@@ -2282,7 +2288,7 @@ class MacroService : AccessibilityService() {
         var basY = -1f
         val kok = FrameLayout(this)
         val bilgi = TextView(this).apply {
-            text = "📏 Skile dokun, oyunda beyaz alan (AOE önizleme) mobun ÜSTÜNE gelene kadar sürükle, sonra parmağını kaldır."
+            text = "📏 Skile dokun; SADECE DÜĞMENİN HEMEN YANINA, yön ok işareti çıkana kadar KISA bir sürükleme yap (ekranın öbür ucuna, mobun üstüne kadar DEĞİL), sonra parmağını kaldır."
             setTextColor(Color.WHITE)
             textSize = 15f
             background = rounded(0xE6101318.toInt())
@@ -9808,10 +9814,13 @@ class MacroService : AccessibilityService() {
      * algilamasi beklenir - tipki PK joystick'lerinin calisma mantigi gibi.
      */
     private fun yonluStroke(h: Hedef, start: Long): GestureDescription.StrokeDescription {
-        val TUT_SURE = 380L
-        val SEG_SURE = 50L
-        val SEG_SAY = 7
-        val tut = Path().apply { moveTo(h.x, h.y); lineTo(h.x, h.y) }
+        // Son deneme: cok daha yavas/uzun (toplam ~1,3 sn). Hic hareketsiz bir "tut" bazi
+        // sistemlerde ACTION_MOVE hic uretmeyebilir (tek DOWN+UP gibi algilanabilir); ufak
+        // bir kipirdanma (1px) ekleyerek tutma sirasinda da gercek hareket olaylari saglandi.
+        val TUT_SURE = 650L
+        val SEG_SURE = 60L
+        val SEG_SAY = 11
+        val tut = Path().apply { moveTo(h.x, h.y); lineTo(h.x + 1f, h.y) }
         var s: GestureDescription.StrokeDescription = GestureDescription.StrokeDescription(tut, start, TUT_SURE, true)
         val sx = (h.surukleX ?: h.x).coerceIn(1f, (screenW - 2).toFloat())
         val sy = (h.surukleY ?: h.y).coerceIn(1f, (screenH - 2).toFloat())
