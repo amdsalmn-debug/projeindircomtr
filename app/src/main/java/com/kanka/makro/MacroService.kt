@@ -67,7 +67,8 @@ class MacroService : AccessibilityService() {
     // Oyun icinde tus duzenleme ekrani
     private var editor: FrameLayout? = null
 
-    private class Hedef(val x: Float, val y: Float, val r: Float, val fast: Boolean = false)
+    // surukleX/Y doluysa: basili tut, sonra o noktaya surukle, birak (yonlu/alan mage skilleri icin)
+    private class Hedef(val x: Float, val y: Float, val r: Float, val fast: Boolean = false, val surukleX: Float? = null, val surukleY: Float? = null)
 
     private enum class Loot { BOS, COLLECT_BEKLE, SONRAKI_KUTU }
 
@@ -804,6 +805,33 @@ class MacroService : AccessibilityService() {
             }
         }
         return best
+    }
+
+    /**
+     * Yonlu/alan skili (mage): secili mobun halkasina (secimHalkasi) gore, karakterden mobun
+     * yonunu VE uzakligini hesaplar; skil dugmesinden o yone, mob ne kadar uzaktaysa o kadar
+     * (joystick'in sinirina kadar) suruklenecek noktayi dondurur. Beyaz alan (AOE onizleme)
+     * mobun USTUNE gelsin diye sadece yon degil, mesafe de mob ekranda ne kadar uzaktaysa ona
+     * gore olcekleniyor - yakin mob icin kisa, uzak mob icin joystick sinirina yakin surukleme.
+     * Mob halkasi bulunamazsa null (o zaman normal tek dokunus yapilir, bos yone sapmaz).
+     * ÖLÇEK TAHMİNİ: oyunun joystick->AOE mesafe oranını tam bilmiyorum (video'dan ölçülemez),
+     * bu yüzden ekran mesafesiyle orantılı, sınırlı bir sürükleme kullanıyorum. İlk gerçek testte
+     * beyaz alan mobun ÖNÜNDE/GERİSİNDE kalırsa MIN_DP/MAX_DP değerlerini birlikte ayarlarız.
+     */
+    private fun yonluSurukleHedefi(p: Nokta): Pair<Float, Float>? {
+        val halka = secimHalkasi() ?: return null
+        val cx = screenW * 0.5f
+        val cy = screenH * cfg.alanCy / 100f
+        val dx = (halka[0] - cx).toDouble()
+        val dy = (halka[1] - cy).toDouble()
+        val aci = Math.atan2(dy, dx)
+        val ekranMesafe = Math.hypot(dx, dy).toFloat()
+        val MIN_DP = dp(18).toFloat()
+        val MAX_DP = dp(55).toFloat()
+        // Mob, ekranin yaklasik yarisi kadar uzaga kadar gorunur varsayimiyla orantila (0..1), sinirlara kirp
+        val oran = (ekranMesafe / (minOf(screenW, screenH) * 0.45f)).coerceIn(0f, 1f)
+        val mesafe = MIN_DP + (MAX_DP - MIN_DP) * oran
+        return (p.x + Math.cos(aci) * mesafe).toFloat() to (p.y + Math.sin(aci) * mesafe).toFloat()
     }
 
     /** Alan dikdortgenini (ve varsa bulunan halka noktasini) 4 sn ekranda gosterir; dokunuslari engellemez */
@@ -3636,6 +3664,17 @@ class MacroService : AccessibilityService() {
                 if (i < c.points.size) {
                     c.points[i].on = !c.points[i].on
                     c.save(this)
+                }
+                editorRefresh()
+            })
+            items.add((if (p.yonlu) "🧭 Yönlü skill: AÇIK (kapat)" else "🧭 Yönlü skill: KAPALI (aç)") to {
+                val c = Config.load(this)
+                if (i < c.points.size) {
+                    c.points[i].yonlu = !c.points[i].yonlu
+                    c.save(this)
+                    toast(if (c.points[i].yonlu)
+                        "✅ Basınca kısa süre basılı tutulup mobun yönüne sürüklenecek (alan/mage skili)"
+                    else "Normal tek dokunuşa döndü")
                 }
                 editorRefresh()
             })
@@ -7851,7 +7890,15 @@ class MacroService : AccessibilityService() {
             adaylar.add(kat(n) to Hedef(n.x.toFloat(), n.y.toFloat(), r))
         lootOlc(now)?.let { adaylar.add("kutu" to it) }
         val atakN = pick(now)
-        atakN?.let { adaylar.add("atak" to Hedef(it.x.toFloat(), it.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" })) }
+        fun atakHedefi(p: Nokta): Hedef {
+            val hizli = adaylar.any { a -> a.first == "kutu" }
+            if (p.type == "skill" && p.yonlu) {
+                val suruklen = yonluSurukleHedefi(p)
+                if (suruklen != null) return Hedef(p.x.toFloat(), p.y.toFloat(), r, fast = hizli, surukleX = suruklen.first, surukleY = suruklen.second)
+            }
+            return Hedef(p.x.toFloat(), p.y.toFloat(), r, fast = hizli)
+        }
+        atakN?.let { adaylar.add("atak" to atakHedefi(it)) }
         // Kılıç (temel saldırı): hedef canlıyken skille BİRLİKTE, aynı dokunuşla basılır (otomatik saldırı
         // olmayan sunucularda mob sadece seçilince vurulmuyor). pkAktif/koAktif burada ayrı akışta,
         // dokunulmaz. Skillerle aynı adımda, aynı tek dokunuşa (tapMulti) eklenir.
@@ -7874,7 +7921,7 @@ class MacroService : AccessibilityService() {
                 skillLast[i] = now
                 if ((skillGorsel[i] ?: 0) == 0 && skillRef[i] != null) { skillOlc[i] = now; skillOlcCanli[i] = oncekiCanli }
                 skillReady[i] = now + if (p.cd > 0f) (p.cd * 1000).toLong() + rand(cfg.skMin, cfg.skMax) else 0L
-                adaylar.add("atak" to Hedef(p.x.toFloat(), p.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" }))
+                adaylar.add("atak" to atakHedefi(p))
             }
         }
         // Teşhis: atak neden basılmadı (uzun kutu-toplama boşluklarının gerçek sebebini raporda görmek için)
@@ -9669,19 +9716,45 @@ class MacroService : AccessibilityService() {
         return GestureDescription.StrokeDescription(path, start, if (sure > 0) sure else basmaSuresi())
     }
 
+    /**
+     * Yonlu/alan skili: butona bas, kisa sure basili tut (oyun kucuk yon tusunu gostersin),
+     * sonra mobun yonune surukle ve birak. Suresi/mesafesi tahmini - ilk gercek testte ayarlanabilir.
+     */
+    private fun yonluStroke(h: Hedef, start: Long): GestureDescription.StrokeDescription {
+        val tut = Path().apply { moveTo(h.x, h.y); lineTo(h.x, h.y) }
+        val s1 = GestureDescription.StrokeDescription(tut, start, 260L, true)
+        val sx = (h.surukleX ?: h.x).coerceIn(1f, (screenW - 2).toFloat())
+        val sy = (h.surukleY ?: h.y).coerceIn(1f, (screenH - 2).toFloat())
+        val surukle = Path().apply { moveTo(h.x, h.y); lineTo(sx, sy) }
+        return s1.continueStroke(surukle, start + 260L, 150L, false)
+    }
+
     /** Birden fazla noktaya ayni anda (farkli parmaklarla) dokun */
     private fun tapMulti(list: List<Hedef>, done: () -> Unit) {
         sonDokunusAt = System.currentTimeMillis()
         // Yon pedleri kullaniliyorsa botun dokunuslari pedlerin akisina eklenir
         if (padKullaniliyor()) { padBotEkle(list, done); return }
         if (list.size == 1) {
-            tap(list[0].x, list[0].y, list[0].r, done); return
+            val tek = list[0]
+            if (tek.surukleX != null || tek.surukleY != null) {
+                val g = try { GestureDescription.Builder().addStroke(yonluStroke(tek, 0L)).build() } catch (e: Exception) { null }
+                if (g != null) {
+                    val ok = dispatchGesture(g, object : AccessibilityService.GestureResultCallback() {
+                        override fun onCompleted(gestureDescription: GestureDescription?) { done() }
+                        override fun onCancelled(gestureDescription: GestureDescription?) { done() }
+                    }, h)
+                    if (ok) return
+                }
+            }
+            tap(tek.x, tek.y, tek.r, done); return
         }
         val g = try {
             val b = GestureDescription.Builder()
             list.forEachIndexed { i, t ->
                 // Diger parmaklar cok hafif gecikmeli, insan gibi
-                b.addStroke(stroke(t.x, t.y, t.r, if (i == 0) 0L else rand(0, 40)))
+                val baslangic = if (i == 0) 0L else rand(0, 40)
+                if (t.surukleX != null || t.surukleY != null) b.addStroke(yonluStroke(t, baslangic))
+                else b.addStroke(stroke(t.x, t.y, t.r, baslangic))
             }
             b.build()
         } catch (e: Exception) {
