@@ -824,12 +824,14 @@ class MacroService : AccessibilityService() {
      * beyaz alan mobun ÖNÜNDE/GERİSİNDE kalırsa MIN_DP/MAX_DP değerlerini birlikte ayarlarız.
      */
     private var yonluHalkaYokSon = 0L
+    private var yonluToastSon = 0L
     private fun yonluSurukleHedefi(p: Nokta): Pair<Float, Float>? {
         val halka = secimHalkasi()
         if (halka == null) {
             // Teshis: "duz vurdu, yon vermedi" raporunun gercek sebebi bu mu (halka bulunamadi)?
             val n = SystemClock.uptimeMillis()
             if (n - yonluHalkaYokSon > 4000) { yonluHalkaYokSon = n; TestLog.olay("YONLU_HALKA_YOK", "${p.name}: mob halkasi bulunamadi, yonsuz (duz) basildi", "ekran ${screenW}x$screenH") }
+            if (n - yonluToastSon > 5000) { yonluToastSon = n; ui.post { toast("⚠ ${p.name}: mob halkası bulunamadı, düz basıldı") } }
             return null
         }
         val cx = screenW * 0.5f
@@ -839,6 +841,10 @@ class MacroService : AccessibilityService() {
         val aci = Math.atan2(dy, dx)
         val ekranMesafe = Math.hypot(dx, dy).toFloat()
         TestLog.olay("YONLU_HALKA_BULUNDU", "${p.name}: halka=${halka[0].toInt()},${halka[1].toInt()} merkez=${cx.toInt()},${cy.toInt()} mesafe=${ekranMesafe.toInt()}", "")
+        run {
+            val n = SystemClock.uptimeMillis()
+            if (n - yonluToastSon > 5000) { yonluToastSon = n; ui.post { toast("🧭 ${p.name}: mob yönüne sürükleniyor") } }
+        }
         val MIN_DP = dp(18).toFloat()
         val MAX_DP = dp(55).toFloat()
         // Mob, ekranin yaklasik yarisi kadar uzaga kadar gorunur varsayimiyla orantila (0..1), sinirlara kirp
