@@ -1863,9 +1863,8 @@ class MacroService : AccessibilityService() {
                 { kaydet { it.pkOkuma = false } },
                 { kaydet { it.pkOkuma = true } })
         }
-        satir("⏱ Süre", { "${Config.load(this).minutes} dk" },
-            { kaydet { it.minutes = (it.minutes - 10).coerceIn(10, 600) } },
-            { kaydet { it.minutes = (it.minutes + 10).coerceIn(10, 600) } })
+        // "Süre" ayarı kaldırıldı: bot artık süresiz/sınırsız çalışıyor (kullanıcı isteği),
+        // bu yüzden işlevsiz kalacak bir ayarı ekranda göstermiyoruz.
 
         // Hiz secimi
         val hizSatir = LinearLayout(this).apply {
@@ -4696,7 +4695,9 @@ class MacroService : AccessibilityService() {
     private val statusTick = object : Runnable {
         override fun run() {
             if (!running) return
-            val left = ((endAtReal - SystemClock.elapsedRealtime()) / 1000).coerceAtLeast(0)
+            // Bot suresiz calistigi icin "kalan sure" artik anlamli degil (hep 0'da kalirdi):
+            // bunun yerine GECEN sureyi gosteriyoruz.
+            val left = ((SystemClock.elapsedRealtime() - (endAtReal - cfg.minutes * 60_000L)) / 1000).coerceAtLeast(0)
             // Uyelik: 10 dakikada bir sunucudan tekrar kontrol
             val simdi = SystemClock.uptimeMillis()
             bekciKontrol(simdi)
@@ -7587,10 +7588,9 @@ class MacroService : AccessibilityService() {
         }
         bekleNeden = ""
         val now = SystemClock.uptimeMillis()
-        if (SystemClock.elapsedRealtime() >= endAtReal) {
-            TestLog.olay("SURE_BITTI", "ayarlanan çalışma süresi doldu", "dk=${cfg.minutes}")
-            stopMacro("Süre bitti, bot durdu"); return
-        }
+        // Kullanici istegi: bot suresiz/sinirsiz calissin, Ayarlar'daki "Süre" ayari (cfg.minutes)
+        // artik botu durdurmuyor. (endAtReal hala baslangicta set ediliyor ama burada hic
+        // kontrol edilmiyor, yani calismaya hic ara vermeden devam eder.)
         // Town döngüsü: her N dk envanteri kontrol et (ya da çanta dolu işareti), doluysa Town→Inn→banka→Town→slot
         if (testCalisiyor && cfg.townAcik && !rotaCalisiyor && !tapping && lootPhase == Loot.BOS &&
             townHazirMi() && ((cantaDoluBayrak && SystemClock.elapsedRealtime() - townBayrakSon >= 120_000L) || townVakit())) {
