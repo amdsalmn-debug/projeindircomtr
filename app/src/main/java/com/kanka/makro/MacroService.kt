@@ -6278,7 +6278,10 @@ class MacroService : AccessibilityService() {
         for (i in k until rotaIz.size) yol.add(rotaIz[i])
         rotaAsama = 2
         TestLog.olay("ROTA_GIDIS", "Inn Hostes'e yürünüyor", "baslangic=${bk[0]},${bk[1]} ilk_nokta=$k nokta=${yol.size}")
-        yuruBaslat(yol, 4.0, 150_000L) { ok, neden ->
+        // planli=true: takilirsa (ör. bir mob/baska oyuncu yola girmis) once ogrenilmis haritadan
+        // dolanma yolu dener, 8 kurtarma denemesine kadar vazgecmez (eskiden bu en sik kullanilan
+        // yuruyus, ayarsiz kalmisti: sadece 3 deneme, haritadan yararlanmadan vazgeciyordu).
+        yuruBaslat(yol, 4.0, 150_000L, planli = true) { ok, neden ->
             rh.post {
                 if (!rotaCalisiyor) return@post
                 if (!ok) {
@@ -6547,7 +6550,7 @@ class MacroService : AccessibilityService() {
         if (geri.size < 2) geri.add(intArrayOf(bk[0], bk[1]))
         rotaAsama = 8
         TestLog.olay("ROTA_DONUS", "slota dönülüyor", "nokta=${geri.size} hedef=${bk[0]},${bk[1]}")
-        yuruBaslat(geri, 5.0, 150_000L) { ok, neden ->
+        yuruBaslat(geri, 5.0, 150_000L, planli = true) { ok, neden ->
             rh.post {
                 if (!rotaCalisiyor) return@post
                 if (ok) rotaBitir() else rotaIptal("dönüş: $neden")
@@ -6615,7 +6618,22 @@ class MacroService : AccessibilityService() {
         jBirak()
         rotaCalisiyor = false
         rotaMesgul = false
-        if (running) stopMacro("Çanta rotası durdu: $neden") else toast("Çanta rotası durdu: $neden")
+        if (rotaMod == 0) {
+            // Eskiden tek bir navigasyon hatasi (yol tikali, OCR okuyamadi, zaman asimi...) BOTUN
+            // TAMAMINI durduruyordu (stopMacro) - kullanici fark etmeden saatlerce cevrimdisi
+            // kalabiliyordu. Artik sadece bu banka denemesi birakilir, farm NORMAL devam eder;
+            // canta hala dolu sayilir ve 2 dk sonra (ani tekrar denemesin diye) dogal tetikle
+            // (sure dolunca / tekrar kutu toplanamayinca) yeniden denenir.
+            toast("🎒 Çanta rotası durdu: $neden. Farm devam ediyor, birazdan tekrar denenecek.")
+            cantaDoluBayrak = true
+            doluKutuAt = 0L
+            collectStreak = 0
+            lootPhase = Loot.BOS
+            townBayrakSon = SystemClock.elapsedRealtime()
+            nextTarget = 0L
+        } else {
+            if (running) stopMacro("Çanta rotası durdu: $neden") else toast("Çanta rotası durdu: $neden")
+        }
     }
 
     // ================= Town merkezli otonom çanta döngüsü (MykoMobile, yalnızca "Test" yetkili hesap) =================
