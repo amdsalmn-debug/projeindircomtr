@@ -60,7 +60,7 @@ class MainActivity : Activity() {
         const val EXTRA_AUTO = "autoCapture"
 
         /** AdMob reklam birimi (giriş ekranı banner'ı). Uygulama kimliği AndroidManifest.xml'de (APPLICATION_ID). */
-        const val ADMOB_BANNER = "ca-app-pub-1035543413650045/3046925537"
+        const val ADMOB_BANNER = "ca-app-pub-1035543413650045/5319125808"
 
         // Knight Online arayuzu (oyundaki CHAR INFO / SKILL PAGE pencereleri gibi)
         private const val BG = 0xFF070707.toInt()          // siyah
@@ -219,7 +219,7 @@ class MainActivity : Activity() {
             setShadowLayer(8f, 0f, 2f, 0xFF000000.toInt())
         })
         root.addView(TextView(this).apply {
-            text = "MykoMobile  •  RevengerOnline  •  NowaOnline  •  KO Mobile      Yapımcı: Muhammed Salman"
+            text = "MykoMobile  •  NowaOnline      Yapımcı: Muhammed Salman"
             textSize = 14f
             setTextColor(ACCENT)
             setPadding(0, 0, 0, dp(14))

@@ -31,7 +31,7 @@
         <!-- AdMob uygulama kimliği (Projeindir Bot) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-1035543413650045~4360007208" />
+            android:value="ca-app-pub-1035543413650045~3926153084" />
 
 
         <activity
