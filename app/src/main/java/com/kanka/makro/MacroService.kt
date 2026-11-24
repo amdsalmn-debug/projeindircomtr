@@ -5474,10 +5474,16 @@ class MacroService : AccessibilityService() {
                 if (x != null && y != null) liste.add(intArrayOf(x, y))
             }
         }
-        rh.post {
-            rotaIz.clear()
-            rotaIz.addAll(liste)
-        }
+        fun uygula() { rotaIz.clear(); rotaIz.addAll(liste) }
+        // ONEMLI: rotaYukle() cogunlukla rota thread'inin (rh) KENDISI icinde cagriliyor
+        // (townBaslatIc/rotaBaslatIc zaten rh.post ile calisiyor). O durumda rh.post ETMEK,
+        // doldurmayi "bu metot bitince" diye kuyruga atar; hemen ardindan gelen innHedef()/
+        // rotaHazirMi() kontrolleri rotaIz'i HALA BOS gorur (rota kayitliyken bile "once rotayi
+        // kaydet" uyarisi cikmasinin asil sebebi buydu, rapor: 'kaydettigim halde hata aldim,
+        // botu durdurup tekrar baslatinca duzeldi' - o sure icinde arka plandaki post calismis oluyordu).
+        // Zaten rota thread'indeysek dogrudan doldur; baska thread'den (ör. menu/UI) cagrildiysa
+        // thread guvenligi icin yine post et.
+        if (Thread.currentThread() === rotaThread) uygula() else rh.post { uygula() }
     }
 
     private fun rotaKaydet() {
@@ -6141,8 +6147,14 @@ class MacroService : AccessibilityService() {
             jDunya(ph + (if (yuruKurtarma % 2 == 0) 1.57 else -1.57), rr)
             return
         }
+        // Hedefe yaklaşınca yavaşla: sabit hızda son adım hedefi atlayıp geçebiliyordu (rapor: Inn Hostes'in
+        // yanından geçip biraz ileri gidip duruyordu). Oyun konumu ~1,2 sn'de bir güncellendiği için yüksek
+        // hızda tek adım "yuruTol" (varış) çemberini hiç tetiklemeden atlayabilir. Son ~18 birimde joystick
+        // büyüklüğünü kademeli azaltmak, son durağı daha hassas yakalamasını sağlar (yön/rota mantığı aynı).
+        val yavaslamaMesafesi = 18.0
+        val hizCarpani = if (dSon < yavaslamaMesafesi) (0.4 + 0.6 * (dSon / yavaslamaMesafesi)).coerceIn(0.4, 1.0) else 1.0
         val phi = Math.atan2((ty - ky).toDouble(), (tx - kx).toDouble())
-        val a = jDunya(phi, rr)
+        val a = jDunya(phi, (rr * hizCarpani).toFloat())
         if (Math.abs(aciSar(a - yuruAKomut)) > 0.35) yuruADegis = now
         yuruAKomut = a
         // kamera ofsetini hareketten yavaşça düzelt (komut en az 1.8 sn sabit kaldıysa)
@@ -6558,6 +6570,13 @@ class MacroService : AccessibilityService() {
         doluKutuAt = 0L
         collectStreak = 0
         lootPhase = Loot.BOS
+        // Slota donunce atak hemen baslasin: banka gezisinden once kalmis "su zamana kadar bekle"
+        // zamanlayicilari (mob secimi, alan/menzil bekleme) temizlenmezse ilk birkac adim bosa gecebilir
+        // (rapor: 'slota gelince atagi hemen hemen baslatmadi').
+        nextTarget = 0L
+        menzilBekleUntil = 0L
+        alanBekleUntil = 0L
+        kilitBekleUntil = 0L
         if (!konumGerekliMi()) konumDurdur()
     }
 
@@ -7638,6 +7657,20 @@ class MacroService : AccessibilityService() {
         if (oncekiCanli && !pkAktif && !koAktif && (cfg.kilitler.isEmpty() || kilitOnayli)) {
             cfg.points.firstOrNull { it.type == "saldiri" && it.on }?.let { kilic ->
                 adaylar.add("atak" to Hedef(kilic.x.toFloat(), kilic.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" }))
+            }
+            // Ek skiller: pick() ayni adimda sadece TEK skill seçiyordu (en uzun süredir basılmayanı,
+            // sırayla döner). Kullanıcı isteği: aynı anda birden fazla skill hazırsa hepsi TEK dokunuşa
+            // (tapMulti) eklensin, biri diğerini beklemesin ("10 parmak" mantığı skillere de genişletildi).
+            // pick() zaten her skili skillHazir() ile taradığı için burada sadece pick()'in SEÇMEDİĞİ
+            // (ve hazır olan) diğer skiller eklenir; hazır/bekleme kaydı pick()'teki ile birebir aynı.
+            for (i in cfg.points.indices) {
+                val p = cfg.points[i]
+                if (p.type != "skill" || !p.on || p === atakN) continue
+                if (!skillHazir(i, p, now)) continue
+                skillLast[i] = now
+                if ((skillGorsel[i] ?: 0) == 0 && skillRef[i] != null) { skillOlc[i] = now; skillOlcCanli[i] = oncekiCanli }
+                skillReady[i] = now + if (p.cd > 0f) (p.cd * 1000).toLong() + rand(cfg.skMin, cfg.skMax) else 0L
+                adaylar.add("atak" to Hedef(p.x.toFloat(), p.y.toFloat(), r, fast = adaylar.any { a -> a.first == "kutu" }))
             }
         }
         // Teşhis: atak neden basılmadı (uzun kutu-toplama boşluklarının gerçek sebebini raporda görmek için)
@@ -8812,9 +8845,10 @@ class MacroService : AccessibilityService() {
                         if (kilitKotu < 2) return null
                         kilitOnayli = false
                         if (kilitKotu >= 8) {
-                            kilitBekleUntil = now + 8000
+                            // Kullanici istegi: kilitli mob yoksa uzun beklemek yerine ~1 sn'de bir tekrar dene
+                            kilitBekleUntil = now + 1000
                             kilitKotu = 6
-                            TestLog.olay("KILIT_BEKLE", "kilitli mob bulunamadı, 8 sn bekleniyor", "")
+                            TestLog.olay("KILIT_BEKLE", "kilitli mob bulunamadı, 1 sn aralıkla tekrar denenecek", "")
                         }
                         TestLog.olay("KILIT_RED", "yanlış mob, hedef bırakıldı", "kilitKotu=$kilitKotu $kilitTani")
                         nextTarget = now + rand(400, 600)
