@@ -281,9 +281,10 @@ class Config {
         /** Secili mod uyeye verilmemisse Farm'a gec (Pazar ayri yonetilir) */
         fun modDuzelt(ctx: Context) {
             val b = bot(ctx)
-            if (b == "pazar") return
+            // Pazar Bot kaldirildi (kullanici istegiyle): eskiden pazar modunda kalmis bir
+            // hesap da artik otomatik Farm'a cekilir, takili kalmasin.
             // PK / Genie bu sürümde yok — ne olursa olsun Farm'a çek
-            if (b == "pk" || b == "genie" || !botGorunur(b)) {
+            if (b == "pazar" || b == "pk" || b == "genie" || !botGorunur(b)) {
                 modDegistir(ctx, false)
                 return
             }

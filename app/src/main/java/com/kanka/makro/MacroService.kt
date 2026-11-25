@@ -4886,7 +4886,7 @@ class MacroService : AccessibilityService() {
     private fun modMenu() {
         val farmAcik = Config.botGorunur("farm")
         val pkAcik = Config.botGorunur("pk")
-        val pazarAcik = Config.botGorunur("pazar") && !Config.revMi(this) && !Config.nowaMi(this)   // RevengerOnline'da Pazar yok
+        val pazarAcik = false   // Pazar Bot kaldirildi (kullanici istegiyle): artik hic secilemez
         val genieAcik = Config.botGorunur("genie")
         val say = listOf(farmAcik, pkAcik, pazarAcik, genieAcik).count { it }
         if (say <= 1) {
